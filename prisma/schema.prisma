@@ -1,0 +1,433 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// Super Platform Admin & Tenants
+// -------------------------------------------------------------
+
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("SUPER_ADMIN")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SubscriptionPlan {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  code            String   @unique // FREE_TRIAL, STARTER, PRO, ENTERPRISE
+  description     String?
+  priceMonthly    Float    @default(0)
+  priceYearly     Float    @default(0)
+  maxBrands       Int      @default(3)
+  maxAccounts     Int      @default(5)
+  maxUsers        Int      @default(3)
+  aiTokensIncluded Int     @default(50000)
+  features        String   @default("[]") // JSON string of features
+  isActive        Boolean  @default(true)
+  tenants         Tenant[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Tenant {
+  id                 String            @id @default(uuid())
+  name               String
+  slug               String            @unique
+  domain             String?
+  status             String            @default("ACTIVE") // ACTIVE, SUSPENDED, TRIAL
+  subscriptionPlanId String?
+  subscriptionPlan   SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
+  
+  // Custom API keys / BYOK (Bring Your Own Key) per tenant
+  customMetaAppId     String?
+  customMetaAppSecret String?
+  customAiApiKey      String?
+  customAiProvider    String?          @default("GEMINI") // GEMINI, OPENAI, ANTHROPIC
+  
+  users              User[]
+  businesses         Business[]
+  auditEvents        AuditEvent[]
+  invitations        TeamInvitation[]
+  analyticsMetrics   AnalyticsMetric[]
+  aiUsageLogs        AiUsageLog[]
+  
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  name         String
+  role         String        @default("TEAM_MEMBER") // SUPER_ADMIN, TENANT_ADMIN, TEAM_MEMBER, VIEWER
+  avatarUrl    String?
+  isActive     Boolean       @default(true)
+  tenantId     String?
+  tenant       Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lastLoginAt  DateTime?
+  
+  assignedInteractions Interaction[] @relation("AssignedToUser")
+  approvedReplies      Reply[]       @relation("ApprovedByUser")
+  createdContents      Content[]
+  auditEvents          AuditEvent[]
+  invitationsSent      TeamInvitation[] @relation("InvitedByUser")
+  aiUsageLogs          AiUsageLog[]
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+// -------------------------------------------------------------
+// Businesses, Brands & AI Voice Profiles
+// -------------------------------------------------------------
+
+model Business {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  legalName   String?
+  industry    String?
+  website     String?
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE
+  brands      Brand[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Brand {
+  id             String            @id @default(uuid())
+  businessId     String
+  business       Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  logoUrl        String?
+  description    String?
+  website        String?
+  status         String            @default("ACTIVE")
+  
+  voiceProfile   BrandVoiceProfile?
+  socialAccounts SocialAccount[]
+  contents       Content[]
+  interactions   Interaction[]
+  aiUsageLogs    AiUsageLog[]
+  
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model BrandVoiceProfile {
+  id                 String   @id @default(uuid())
+  brandId            String   @unique
+  brand              Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  tone               String   @default("Professional, friendly, and helpful")
+  writingStyle       String?  @default("Conversational yet authoritative")
+  targetAudience     String?  @default("Tech enthusiasts, entrepreneurs, and professionals")
+  keyTerminology     String?  // Comma-separated key terms
+  bannedKeywords     String?  // Comma-separated disallowed words
+  standardFaqs       String?  // JSON string or markdown FAQ pairs
+  responseGuidelines String?  // Specific instructions for reply assistant
+  exampleReplies     String   @default("[]") // JSON string of [{scenario, goodReply, badReply}]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// -------------------------------------------------------------
+// Social Accounts & Integrations
+// -------------------------------------------------------------
+
+model SocialAccount {
+  id                String         @id @default(uuid())
+  brandId           String
+  brand             Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  platform          String         // FACEBOOK, INSTAGRAM, TWITTER, LINKEDIN
+  platformAccountId String         // Meta Page ID or Instagram User ID
+  accountName       String
+  username          String?
+  profilePicUrl     String?
+  pageCategory      String?
+  accessToken       String         // Encrypted or long-lived token
+  tokenExpiresAt    DateTime?
+  tokenStatus       String         @default("VALID") // VALID, EXPIRING, EXPIRED, REVOKED
+  isConnected       Boolean        @default(true)
+  lastSyncedAt      DateTime?
+  capabilities      String         @default("[\"COMMENTS\", \"DIRECT_MESSAGES\", \"PUBLISHING\"]") // JSON array
+  metadata          String         @default("{}") // Additional Meta API metadata
+  
+  interactions      Interaction[]
+  publications      Publication[]
+  syncJobs          SyncJob[]
+  analyticsMetrics  AnalyticsMetric[]
+  
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+// -------------------------------------------------------------
+// Engagement Inbox, Classification & AI Assistant
+// -------------------------------------------------------------
+
+model Interaction {
+  id                    String          @id @default(uuid())
+  brandId               String
+  brand                 Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  socialAccountId       String
+  socialAccount         SocialAccount   @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform              String          // FACEBOOK, INSTAGRAM
+  type                  String          // COMMENT, DIRECT_MESSAGE, MENTION
+  platformInteractionId String          @unique
+  parentPlatformId      String?
+  authorId              String?
+  authorName            String
+  authorUsername        String?
+  authorAvatarUrl       String?
+  contentText           String
+  mediaUrls             String          @default("[]") // JSON string
+  permalinkUrl          String?
+  platformCreatedAt     DateTime        @default(now())
+  isRead                Boolean         @default(false)
+  replyStatus           String          @default("NEEDS_RESPONSE") // NEEDS_RESPONSE, DRAFT_READY, APPROVED, SENT, IGNORED
+  priority              String          @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  
+  assignedUserId        String?
+  assignedUser          User?           @relation("AssignedToUser", fields: [assignedUserId], references: [id])
+  
+  classifications       Classification[]
+  replies               Reply[]
+  
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model Classification {
+  id                    String      @id @default(uuid())
+  interactionId         String      @unique
+  interaction           Interaction @relation(fields: [interactionId], references: [id], onDelete: Cascade)
+  sentiment             String      @default("NEUTRAL") // POSITIVE, NEUTRAL, NEGATIVE
+  sentimentScore        Float       @default(0.5)
+  isQuestion            Boolean     @default(false)
+  isPricingInquiry      Boolean     @default(false)
+  isLeadIntent          Boolean     @default(false)
+  isSensitiveOrComplaint Boolean    @default(false)
+  urgencyScore          Int         @default(1)
+  rawAnalysis           String?     // JSON reasoning from AI
+  isOverridden          Boolean     @default(false)
+  overriddenByUserId    String?
+  createdAt             DateTime    @default(now())
+}
+
+model Reply {
+  id                String      @id @default(uuid())
+  interactionId     String
+  interaction       Interaction @relation(fields: [interactionId], references: [id], onDelete: Cascade)
+  generatedByAi     Boolean     @default(false)
+  aiPrompt          String?
+  aiSuggestion      String?
+  finalContent      String
+  status            String      @default("DRAFT") // DRAFT, APPROVED, SENT, REJECTED, FAILED
+  approvedByUserId  String?
+  approvedByUser    User?       @relation("ApprovedByUser", fields: [approvedByUserId], references: [id])
+  sentAt            DateTime?
+  platformReplyId   String?
+  errorMessage      String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// -------------------------------------------------------------
+// AI Content Studio, Scheduling & Publications
+// -------------------------------------------------------------
+
+model Content {
+  id              String           @id @default(uuid())
+  brandId         String
+  brand           Brand            @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  title           String?
+  rawIdea         String?
+  caption         String
+  hashtags        String           @default("[]") // JSON string of hashtags
+  mediaUrls       String           @default("[]") // JSON string of URLs
+  targetPlatforms String           @default("[\"FACEBOOK\", \"INSTAGRAM\"]") // JSON
+  format          String           @default("POST") // POST, REEL, STORY, CAROUSEL
+  status          String           @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHING, PUBLISHED, FAILED
+  createdByUserId String
+  createdByUser   User             @relation(fields: [createdByUserId], references: [id])
+  
+  versions        ContentVersion[]
+  publications    Publication[]
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model ContentVersion {
+  id            String   @id @default(uuid())
+  contentId     String
+  content       Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  caption       String
+  hashtags      String   @default("[]")
+  editedByUserId String?
+  changeSummary String?
+  createdAt     DateTime @default(now())
+}
+
+model Publication {
+  id              String          @id @default(uuid())
+  contentId       String
+  content         Content         @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount   @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  scheduledFor    DateTime
+  claimedAt       DateTime?
+  publishedAt     DateTime?
+  status          String          @default("QUEUED") // QUEUED, PUBLISHING, PUBLISHED, FAILED
+  platformPostId  String?
+  platformPostUrl String?
+  errorMessage    String?
+  retryCount      Int             @default(0)
+  idempotencyKey  String          @unique @default(uuid())
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+// -------------------------------------------------------------
+// Operational Monitoring & Audit Trail
+// -------------------------------------------------------------
+
+model AuditEvent {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // e.g. "AUTH_LOGIN", "AI_REPLY_APPROVED", "POST_SCHEDULED", "ACCOUNT_CONNECTED"
+  entityType String   // "Interaction", "Reply", "Content", "SocialAccount", "Tenant"
+  entityId   String?
+  details    String   @default("{}") // JSON details
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+}
+
+model SyncJob {
+  id              String        @id @default(uuid())
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  status          String        @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  itemsSynced     Int           @default(0)
+  errorMessage    String?
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+}
+
+// -------------------------------------------------------------
+// OAuth State & Replay Protection
+// -------------------------------------------------------------
+
+model OAuthState {
+  id         String    @id @default(uuid())
+  nonce      String    @unique
+  userId     String
+  tenantId   String
+  brandId    String
+  isConsumed Boolean   @default(false)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([nonce])
+  @@index([expiresAt])
+}
+
+// -------------------------------------------------------------
+// Team Invitations & RBAC
+// -------------------------------------------------------------
+
+model TeamInvitation {
+  id            String    @id @default(uuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email         String
+  role          String    // OWNER, ADMIN, EDITOR, APPROVER, ANALYST
+  tokenHash     String    @unique
+  invitedById   String
+  invitedBy     User      @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: Cascade)
+  expiresAt     DateTime
+  isAccepted    Boolean   @default(false)
+  acceptedAt    DateTime?
+  isRevoked     Boolean   @default(false)
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([tokenHash])
+  @@index([email])
+}
+
+// -------------------------------------------------------------
+// Historical Analytics & Metric Snapshots
+// -------------------------------------------------------------
+
+model AnalyticsMetric {
+  id              String         @id @default(uuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  brandId         String
+  socialAccountId String?
+  socialAccount   SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        String         // FACEBOOK, INSTAGRAM, PLATFORM_AGGREGATE
+  metricName      String         // IMPRESSIONS, REACH, ENGAGEMENT_RATE, INTERACTIONS, PUBLICATIONS_COUNT, COMMENTS_COUNT
+  metricValue     Float
+  measuredAt      DateTime
+  sourceApi       String         @default("POSTGRESQL_AGGREGATED") // META_GRAPH_API, POSTGRESQL_AGGREGATED
+  syncStatus      String         @default("AVAILABLE") // AVAILABLE, UNAVAILABLE_REQUIRES_PERMISSION, ESTIMATED
+  metadata        String         @default("{}") // Additional details JSON
+  createdAt       DateTime       @default(now())
+
+  @@unique([tenantId, brandId, socialAccountId, metricName, measuredAt])
+  @@index([tenantId, brandId, measuredAt])
+  @@index([metricName, measuredAt])
+}
+
+// -------------------------------------------------------------
+// Persistent AI Usage Logging & Cost Tracking (Stage 1)
+// -------------------------------------------------------------
+
+model AiUsageLog {
+  id               String   @id @default(uuid())
+  tenantId         String?
+  tenant           Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  brandId          String?
+  brand            Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  taskType         String   // REPLY_GENERATION, CONTENT_STUDIO, CLASSIFICATION
+  modelUsed        String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  estimatedCostUsd Float    @default(0)
+  metadata         String   @default("{}") // Optional JSON string for extra context
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([brandId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+
+
+
