@@ -70,10 +70,11 @@ export class MetaService {
     tenantId: string,
     brandId: string,
     customAppId?: string | null,
-    nonce?: string
+    nonce?: string,
+    customRedirectUri?: string | null
   ): { oauthUrl: string; state: string; nonce: string } {
     const appId = customAppId || config.meta.appId;
-    const redirectUri = encodeURIComponent(config.meta.redirectUri);
+    const redirectUri = encodeURIComponent(customRedirectUri || config.meta.redirectUri);
 
     // Cryptographically signed CSRF state with server-tracked nonce
     const { state, nonce: generatedNonce } = CryptoService.signOAuthState({

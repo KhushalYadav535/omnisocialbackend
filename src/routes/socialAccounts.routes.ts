@@ -74,7 +74,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 // 2. Generate Meta 1-Click OAuth URL with cryptographically signed CSRF state
 router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId } = req.query;
+    const { brandId, redirectUri } = req.query;
 
     if (!brandId || typeof brandId !== 'string') {
       res.status(400).json({ error: 'brandId query parameter is required' });
@@ -114,7 +114,8 @@ router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> 
       req.user?.tenantId!,
       brandId,
       tenant?.customMetaAppId || undefined,
-      nonce
+      nonce,
+      typeof redirectUri === 'string' ? redirectUri : undefined
     );
 
     res.json({
@@ -134,7 +135,7 @@ router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> 
 // and returns encrypted session token WITHOUT persisting or exposing raw tokens.
 router.post('/oauth-callback', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { code, state } = req.body;
+    const { code, state, redirectUri } = req.body;
 
     if (!code) {
       res.status(400).json({ error: 'Authorization code is required' });
@@ -209,7 +210,8 @@ router.post('/oauth-callback', async (req: AuthRequest, res: Response): Promise<
     const { userAccessToken, expiresIn } = await MetaService.exchangeCodeForLongLivedToken(
       code,
       tenant?.customMetaAppId || undefined,
-      tenant?.customMetaAppSecret || undefined
+      tenant?.customMetaAppSecret || undefined,
+      typeof redirectUri === 'string' ? redirectUri : undefined
     );
 
     // 3. Auto-discover all eligible Facebook Pages & linked Instagram accounts
