@@ -118,7 +118,7 @@ async function start() {
     // Start background worker for scheduled publishing
     SchedulerService.startWorker();
 
-    app.listen(config.port, () => {
+    app.listen(config.port, '0.0.0.0', () => {
       console.log(`====================================================`);
       console.log(`🚀 Social Media Management Backend running on port ${config.port}`);
       console.log(`👉 Health check: http://localhost:${config.port}/api/health`);
