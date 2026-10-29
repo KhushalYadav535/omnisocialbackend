@@ -22,6 +22,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import webhookRoutes from './routes/webhooks.routes';
 import teamRoutes from './routes/team.routes';
 import monitoringRoutes from './routes/monitoring.routes';
+import legalRoutes from './routes/legal.routes';
 import { LoggerService } from './services/logger.service';
 
 const app = express();
@@ -53,6 +54,16 @@ if (!fs.existsSync(uploadsDirectory)) {
   fs.mkdirSync(uploadsDirectory, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDirectory));
+
+// Root & Health Checks
+app.get('/', (_req, res) => {
+  res.json({
+    status: 'ONLINE',
+    service: 'OmniSocial AI API Engine',
+    version: '1.0.0',
+    health: '/api/health'
+  });
+});
 
 // Health Check with Database Connectivity Status
 app.get('/api/health', async (req, res) => {
@@ -91,6 +102,7 @@ app.use('/api/publications', publicationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 app.use('/api', businessRoutes);
+app.use('/', legalRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
