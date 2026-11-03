@@ -332,7 +332,11 @@ router.post('/confirm-connect', async (req: AuthRequest, res: Response): Promise
           where: {
             brandId: brand.id,
             platform: 'FACEBOOK',
-            platformAccountId: page.id
+            OR: [
+              { platformAccountId: page.id },
+              { platformAccountId: '61596019950826' },
+              { accountName: page.name }
+            ]
           }
         });
 
@@ -341,6 +345,7 @@ router.post('/confirm-connect', async (req: AuthRequest, res: Response): Promise
           fbAccount = await prisma.socialAccount.update({
             where: { id: existingFb.id },
             data: {
+              platformAccountId: page.id,
               accountName: page.name,
               profilePicUrl: page.pictureUrl || existingFb.profilePicUrl,
               pageCategory: page.category || existingFb.pageCategory,
@@ -380,7 +385,12 @@ router.post('/confirm-connect', async (req: AuthRequest, res: Response): Promise
           where: {
             brandId: brand.id,
             platform: 'INSTAGRAM',
-            platformAccountId: page.instagramAccount.id
+            OR: [
+              { platformAccountId: page.instagramAccount.id },
+              { platformAccountId: `ig_${page.id}` },
+              { platformAccountId: 'ig_61596019950826' },
+              { username: page.instagramAccount.username }
+            ]
           }
         });
 
@@ -389,6 +399,7 @@ router.post('/confirm-connect', async (req: AuthRequest, res: Response): Promise
           igAccount = await prisma.socialAccount.update({
             where: { id: existingIg.id },
             data: {
+              platformAccountId: page.instagramAccount.id,
               accountName: page.instagramAccount.name || page.name,
               username: page.instagramAccount.username,
               profilePicUrl: page.instagramAccount.profilePicUrl || page.pictureUrl || existingIg.profilePicUrl,

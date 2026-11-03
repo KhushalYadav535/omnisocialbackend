@@ -339,6 +339,29 @@ export class MetaService {
   }
 
   /**
+   * Resolves a Page Access Token. If a User Access Token is provided,
+   * queries /{targetPageId}?fields=access_token to get the authorized Page Access Token.
+   */
+  static async resolvePageAccessToken(pageId: string, token: string): Promise<string> {
+    const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
+    try {
+      const res = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}`, {
+        params: {
+          fields: 'access_token',
+          access_token: token
+        },
+        timeout: 10000
+      });
+      if (res.data?.access_token) {
+        return res.data.access_token;
+      }
+    } catch {
+      // fallback to token
+    }
+    return token;
+  }
+
+  /**
    * Publishes content to a Facebook Page (feed or photos).
    * Supports both public image URLs and local uploaded binary files via multipart/form-data.
    * Throws real MetaApiError on failure; never simulates success.
@@ -350,6 +373,7 @@ export class MetaService {
     mediaUrl?: string
   ): Promise<{ success: true; postId: string; postUrl: string }> {
     const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
+    const activeToken = await MetaService.resolvePageAccessToken(targetPageId, accessToken);
     try {
       let isLocalBinary = false;
       let binaryBuffer: Buffer | null = null;
@@ -392,7 +416,7 @@ export class MetaService {
         if (isLocalBinary && binaryBuffer) {
           // Direct photo post with binary buffer and caption message
           const form = new FormData();
-          form.append('access_token', accessToken);
+          form.append('access_token', activeToken);
           form.append('message', message || '');
           const blob = new Blob([new Uint8Array(binaryBuffer)], { type: binaryMimeType });
           form.append('source', blob, binaryFileName);
@@ -406,7 +430,7 @@ export class MetaService {
           const photoRes = await axios.post(
             `${config.meta.graphBaseUrl}/${targetPageId}/photos`,
             {
-              access_token: accessToken,
+              access_token: activeToken,
               url: mediaUrl,
               message: message || ''
             },
@@ -419,7 +443,7 @@ export class MetaService {
         const feedRes = await axios.post(
           `${config.meta.graphBaseUrl}/${targetPageId}/feed`,
           {
-            access_token: accessToken,
+            access_token: activeToken,
             message: message || ''
           },
           { timeout: 30000 }
@@ -469,13 +493,14 @@ export class MetaService {
     const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
       ? '17841451672167206'
       : igUserId;
+    const activeToken = await MetaService.resolvePageAccessToken('1485024198017475', accessToken);
 
     try {
       // Step 1: Create Media Container
       const containerRes = await axios.post(
         `${config.meta.graphBaseUrl}/${targetIgId}/media`,
         {
-          access_token: accessToken,
+          access_token: activeToken,
           image_url: imageUrl,
           caption
         },
@@ -494,7 +519,7 @@ export class MetaService {
         const statusRes = await axios.get(`${config.meta.graphBaseUrl}/${creationId}`, {
           params: {
             fields: 'status_code',
-            access_token: accessToken
+            access_token: activeToken
           },
           timeout: 10000
         });
@@ -512,7 +537,7 @@ export class MetaService {
       const publishRes = await axios.post(
         `${config.meta.graphBaseUrl}/${targetIgId}/media_publish`,
         {
-          access_token: accessToken,
+          access_token: activeToken,
           creation_id: creationId
         },
         { timeout: 30000 }
@@ -573,6 +598,7 @@ export class MetaService {
     permalinkUrl?: string;
   }>> {
     const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
+    const activeToken = await MetaService.resolvePageAccessToken(targetPageId, accessToken);
     const commentsList: Array<{
       id: string;
       postId: string;
@@ -590,7 +616,7 @@ export class MetaService {
       // 1. Fetch Feed posts and nested comments
       const feedRes = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}/feed`, {
         params: {
-          access_token: accessToken,
+          access_token: activeToken,
           fields: 'id,message,created_time,comments.limit(50){id,message,created_time,from,permalink_url}',
           limit: 25
         },
@@ -625,7 +651,7 @@ export class MetaService {
       // 2. Fetch Photos and nested comments
       const photosRes = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}/photos`, {
         params: {
-          access_token: accessToken,
+          access_token: activeToken,
           type: 'uploaded',
           fields: 'id,name,created_time,comments.limit(50){id,message,created_time,from,permalink_url}',
           limit: 25
@@ -679,6 +705,7 @@ export class MetaService {
     const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
       ? '17841451672167206'
       : igUserId;
+    const activeToken = await MetaService.resolvePageAccessToken('1485024198017475', accessToken);
 
     const commentsList: Array<{
       id: string;
@@ -694,7 +721,7 @@ export class MetaService {
     try {
       const mediaRes = await axios.get(`${config.meta.graphBaseUrl}/${targetIgId}/media`, {
         params: {
-          access_token: accessToken,
+          access_token: activeToken,
           fields: 'id,caption,comments.limit(50){id,text,timestamp,username,from,permalink}',
           limit: 25
         },
@@ -736,11 +763,12 @@ export class MetaService {
     accessToken: string,
     message: string
   ): Promise<{ success: true; replyId: string }> {
+    const activeToken = await MetaService.resolvePageAccessToken('1485024198017475', accessToken);
     try {
       const res = await axios.post(
         `${config.meta.graphBaseUrl}/${commentId}/comments`,
         {
-          access_token: accessToken,
+          access_token: activeToken,
           message
         },
         { timeout: 15000 }
@@ -777,16 +805,18 @@ export class MetaService {
     recipientId: string,
     message: string
   ): Promise<{ success: true; messageId: string }> {
+    const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
+    const activeToken = await MetaService.resolvePageAccessToken(targetPageId, accessToken);
     try {
       const res = await axios.post(
-        `${config.meta.graphBaseUrl}/${pageId}/messages`,
+        `${config.meta.graphBaseUrl}/${targetPageId}/messages`,
         {
           recipient: { id: recipientId },
           message: { text: message },
           messaging_type: 'RESPONSE'
         },
         {
-          params: { access_token: accessToken },
+          params: { access_token: activeToken },
           timeout: 15000
         }
       );
@@ -817,11 +847,13 @@ export class MetaService {
     authorName: string;
     authorUsername: string;
   }>> {
+    const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
+    const activeToken = await MetaService.resolvePageAccessToken(targetPageId, accessToken);
     const messagesList: any[] = [];
     try {
-      const res = await axios.get(`${config.meta.graphBaseUrl}/${pageId}/conversations`, {
+      const res = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}/conversations`, {
         params: {
-          access_token: accessToken,
+          access_token: activeToken,
           platform: 'messenger',
           fields: 'id,updated_time,participants,messages.limit(25){id,message,created_time,from,to}',
           limit: 15
