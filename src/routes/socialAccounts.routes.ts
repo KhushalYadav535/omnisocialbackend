@@ -74,7 +74,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 // 2. Generate Meta 1-Click OAuth URL with cryptographically signed CSRF state
 router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId, redirectUri } = req.query;
+    const { brandId, redirectUri, platform } = req.query;
 
     if (!brandId || typeof brandId !== 'string') {
       res.status(400).json({ error: 'brandId query parameter is required' });
@@ -115,7 +115,8 @@ router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> 
       brandId,
       tenant?.customMetaAppId || undefined,
       nonce,
-      typeof redirectUri === 'string' ? redirectUri : undefined
+      typeof redirectUri === 'string' ? redirectUri : undefined,
+      typeof platform === 'string' ? platform : undefined
     );
 
     res.json({

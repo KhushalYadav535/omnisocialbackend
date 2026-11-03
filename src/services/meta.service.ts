@@ -71,7 +71,8 @@ export class MetaService {
     brandId: string,
     customAppId?: string | null,
     nonce?: string,
-    customRedirectUri?: string | null
+    customRedirectUri?: string | null,
+    platform?: string | null
   ): { oauthUrl: string; state: string; nonce: string } {
     const appId = customAppId || config.meta.appId;
     const redirectUri = encodeURIComponent(customRedirectUri || config.meta.redirectUri);
@@ -83,18 +84,31 @@ export class MetaService {
       brandId
     }, nonce);
 
-    // Required permissions for Meta Graph API v26.0
-    const scopes = [
+    // Precise scopes based on intent
+    let scopeList = [
       'pages_show_list',
       'pages_read_engagement',
-      'pages_manage_posts',
-      'pages_manage_engagement',
-      'pages_manage_metadata',
-      'pages_messaging',
-      'instagram_business_basic',
-      'instagram_business_content_publish'
-    ].join(',');
+      'pages_manage_posts'
+    ];
 
+    if (platform === 'INSTAGRAM') {
+      scopeList = [
+        'pages_show_list',
+        'pages_read_engagement',
+        'instagram_basic',
+        'instagram_content_publish'
+      ];
+    } else if (platform === 'ALL') {
+      scopeList = [
+        'pages_show_list',
+        'pages_read_engagement',
+        'pages_manage_posts',
+        'instagram_basic',
+        'instagram_content_publish'
+      ];
+    }
+
+    const scopes = scopeList.join(',');
     const oauthUrl = `https://www.facebook.com/${config.meta.apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}&response_type=code&auth_type=rerequest`;
 
     return {
