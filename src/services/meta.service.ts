@@ -225,7 +225,7 @@ export class MetaService {
 
       // 2. If still empty, check specific known active page IDs accessible via this user token
       if (rawPages.length === 0) {
-        const candidatePageIds = ['61596019950826'];
+        const candidatePageIds = ['1485024198017475', '61596019950826'];
         for (const pId of candidatePageIds) {
           try {
             const pageRes = await axios.get(`${config.meta.graphBaseUrl}/${pId}`, {
@@ -250,7 +250,7 @@ export class MetaService {
       // 3. Fallback for Sentient digital in case Meta Standard Access blocks direct page listing
       if (rawPages.length === 0 && userAccessToken) {
         rawPages.push({
-          id: '61596019950826',
+          id: '1485024198017475',
           name: 'Sentient digital',
           category: 'Science, technology and engineering',
           access_token: userAccessToken,
@@ -264,7 +264,7 @@ export class MetaService {
       }
 
       const accounts: MetaPageAccount[] = rawPages.map((page: any) => ({
-        id: page.id,
+        id: page.id === '61596019950826' ? '1485024198017475' : page.id,
         name: page.name,
         category: page.category || 'Science, technology and engineering',
         accessToken: page.access_token || userAccessToken,
@@ -275,8 +275,8 @@ export class MetaService {
           username: page.instagram_business_account.username,
           name: page.instagram_business_account.name,
           profilePicUrl: page.instagram_business_account.profile_picture_url
-        } : (page.name?.toLowerCase().includes('sentient') || page.id === '61596019950826' || page.name ? {
-          id: `ig_${page.id || '61596019950826'}`,
+        } : (page.name?.toLowerCase().includes('sentient') || page.id === '1485024198017475' || page.id === '61596019950826' || page.name ? {
+          id: '17841451672167206',
           username: 'sent.ientdigital',
           name: page.name || 'Sentient Digital',
           profilePicUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop'
@@ -349,6 +349,7 @@ export class MetaService {
     message: string,
     mediaUrl?: string
   ): Promise<{ success: true; postId: string; postUrl: string }> {
+    const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
     try {
       let isLocalBinary = false;
       let binaryBuffer: Buffer | null = null;
@@ -398,14 +399,14 @@ export class MetaService {
           const blob = new Blob([new Uint8Array(binaryBuffer)], { type: binaryMimeType });
           form.append('source', blob, binaryFileName);
 
-          const photoRes = await axios.post(`${config.meta.graphBaseUrl}/${pageId}/photos`, form, {
+          const photoRes = await axios.post(`${config.meta.graphBaseUrl}/${targetPageId}/photos`, form, {
             timeout: 45000
           });
           photoId = photoRes.data?.id;
         } else {
           // Step 1: Upload photo as unpublished URL asset
           const photoRes = await axios.post(
-            `${config.meta.graphBaseUrl}/${pageId}/photos`,
+            `${config.meta.graphBaseUrl}/${targetPageId}/photos`,
             {
               access_token: accessToken,
               url: mediaUrl,
@@ -420,7 +421,7 @@ export class MetaService {
           // Step 2: Publish Page feed timeline post with attached photo (creates full timeline post on 'All' tab)
           try {
             const feedRes = await axios.post(
-              `${config.meta.graphBaseUrl}/${pageId}/feed`,
+              `${config.meta.graphBaseUrl}/${targetPageId}/feed`,
               {
                 access_token: accessToken,
                 message: message || '',
@@ -437,7 +438,7 @@ export class MetaService {
       } else {
         // Text-only status update on main Page feed
         const feedRes = await axios.post(
-          `${config.meta.graphBaseUrl}/${pageId}/feed`,
+          `${config.meta.graphBaseUrl}/${targetPageId}/feed`,
           {
             access_token: accessToken,
             message: message || ''
@@ -486,20 +487,14 @@ export class MetaService {
     caption: string,
     imageUrl: string
   ): Promise<{ success: true; postId: string; postUrl: string }> {
-    try {
-      // If demo / mock / dev fallback ID or mock token, return verified publication without throwing
-      if (igUserId.startsWith('ig_') || accessToken.startsWith('EAAB_mock_test') || igUserId.startsWith('manual_')) {
-        const mockPostId = `1784${Date.now().toString().slice(-10)}`;
-        return {
-          success: true,
-          postId: mockPostId,
-          postUrl: `https://www.instagram.com/p/DA_${mockPostId.slice(-6)}/`
-        };
-      }
+    const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
+      ? '17841451672167206'
+      : igUserId;
 
+    try {
       // Step 1: Create Media Container
       const containerRes = await axios.post(
-        `${config.meta.graphBaseUrl}/${igUserId}/media`,
+        `${config.meta.graphBaseUrl}/${targetIgId}/media`,
         {
           access_token: accessToken,
           image_url: imageUrl,
@@ -513,9 +508,10 @@ export class MetaService {
         throw new MetaApiError('Instagram container creation failed: No container ID returned');
       }
 
-      // Step 2: Container Readiness Check (poll up to 3 times if IN_PROGRESS)
+      // Step 2: Container Readiness Check (poll up to 5 times)
       let isReady = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         const statusRes = await axios.get(`${config.meta.graphBaseUrl}/${creationId}`, {
           params: {
             fields: 'status_code',
@@ -531,14 +527,11 @@ export class MetaService {
         } else if (statusCode === 'ERROR') {
           throw new MetaApiError('Instagram container processing encountered an ERROR state');
         }
-
-        // Wait 1 second before polling again
-        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
       // Step 3: Publish Media Container
       const publishRes = await axios.post(
-        `${config.meta.graphBaseUrl}/${igUserId}/media_publish`,
+        `${config.meta.graphBaseUrl}/${targetIgId}/media_publish`,
         {
           access_token: accessToken,
           creation_id: creationId
@@ -600,6 +593,7 @@ export class MetaService {
     authorUsername: string;
     permalinkUrl?: string;
   }>> {
+    const targetPageId = (pageId === '61596019950826' || pageId.startsWith('manual_')) ? '1485024198017475' : pageId;
     const commentsList: Array<{
       id: string;
       postId: string;
@@ -615,7 +609,7 @@ export class MetaService {
 
     try {
       // 1. Fetch Feed posts and nested comments
-      const feedRes = await axios.get(`${config.meta.graphBaseUrl}/${pageId}/feed`, {
+      const feedRes = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}/feed`, {
         params: {
           access_token: accessToken,
           fields: 'id,message,created_time,comments.limit(50){id,message,created_time,from,permalink_url}',
@@ -650,7 +644,7 @@ export class MetaService {
 
     try {
       // 2. Fetch Photos and nested comments
-      const photosRes = await axios.get(`${config.meta.graphBaseUrl}/${pageId}/photos`, {
+      const photosRes = await axios.get(`${config.meta.graphBaseUrl}/${targetPageId}/photos`, {
         params: {
           access_token: accessToken,
           type: 'uploaded',
@@ -703,6 +697,10 @@ export class MetaService {
     authorUsername: string;
     permalinkUrl?: string;
   }>> {
+    const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
+      ? '17841451672167206'
+      : igUserId;
+
     const commentsList: Array<{
       id: string;
       postId: string;
@@ -715,7 +713,7 @@ export class MetaService {
     }> = [];
 
     try {
-      const mediaRes = await axios.get(`${config.meta.graphBaseUrl}/${igUserId}/media`, {
+      const mediaRes = await axios.get(`${config.meta.graphBaseUrl}/${targetIgId}/media`, {
         params: {
           access_token: accessToken,
           fields: 'id,caption,comments.limit(50){id,text,timestamp,username,from,permalink}',
