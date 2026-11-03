@@ -10,26 +10,31 @@ const router = Router();
 router.use(authenticateToken);
 router.use(requireTenant);
 
-// 1. Instant Publish Now (PUB-01)
+// 1. Instant Publish Now (PUB-01) - Supports single or multi-channel broadcasting
 router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { contentId, socialAccountId } = req.body;
+    const { contentId, socialAccountId, socialAccountIds } = req.body;
+    const targetAccountIds: string[] = Array.isArray(socialAccountIds) && socialAccountIds.length > 0
+      ? socialAccountIds
+      : socialAccountId
+        ? [socialAccountId]
+        : [];
 
-    if (!contentId || !socialAccountId) {
-      res.status(400).json({ error: 'contentId and socialAccountId are required' });
+    if (!contentId || targetAccountIds.length === 0) {
+      res.status(400).json({ error: 'contentId and at least one socialAccountId are required' });
       return;
     }
 
-    const [content, account] = await Promise.all([
+    const [content, accounts] = await Promise.all([
       prisma.content.findFirst({
         where: {
           id: contentId,
           brand: { business: { tenantId: req.user?.tenantId! } }
         }
       }),
-      prisma.socialAccount.findFirst({
+      prisma.socialAccount.findMany({
         where: {
-          id: socialAccountId,
+          id: { in: targetAccountIds },
           brand: { business: { tenantId: req.user?.tenantId! } }
         }
       })
@@ -40,8 +45,8 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    if (!account) {
-      res.status(404).json({ error: 'Social account not found or not owned by your organization' });
+    if (!accounts || accounts.length === 0) {
+      res.status(404).json({ error: 'No matching social accounts found for your organization' });
       return;
     }
 
@@ -49,119 +54,137 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
     try {
       const parsed = JSON.parse(content.mediaUrls || '[]');
       mediaUrl = parsed[0];
+      if (mediaUrl && mediaUrl.startsWith('http://') && !mediaUrl.includes('localhost')) {
+        mediaUrl = mediaUrl.replace('http://', 'https://');
+      }
     } catch {
       mediaUrl = undefined;
     }
 
-    // Decrypt stored access token
-    let rawAccessToken: string;
-    try {
-      rawAccessToken = CryptoService.isEncrypted(account.accessToken)
-        ? CryptoService.decrypt(account.accessToken)
-        : account.accessToken;
-    } catch (decryptErr: any) {
-      res.status(500).json({ error: `Account token decryption failed: ${decryptErr.message}` });
-      return;
-    }
+    const publications: any[] = [];
+    const errors: string[] = [];
 
-    const now = new Date();
-    const idempotencyKey = `idem_instant_${content.id}_${account.id}_${Date.now()}`;
-
-    // Publish to Facebook or Instagram via Meta Graph API
-    let result: { success: true; postId: string; postUrl: string };
-    try {
-      if (account.platform === 'FACEBOOK') {
-        result = await MetaService.publishToFacebookPage(
-          account.platformAccountId,
-          rawAccessToken,
-          content.caption,
-          mediaUrl
-        );
-      } else if (account.platform === 'INSTAGRAM') {
-        result = await MetaService.publishToInstagram(
-          account.platformAccountId,
-          rawAccessToken,
-          content.caption,
-          mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
-        );
-      } else {
-        throw new Error(`Unsupported publishing platform: ${account.platform}`);
+    for (const account of accounts) {
+      // Decrypt stored access token
+      let rawAccessToken: string;
+      try {
+        rawAccessToken = CryptoService.isEncrypted(account.accessToken)
+          ? CryptoService.decrypt(account.accessToken)
+          : account.accessToken;
+      } catch (decryptErr: any) {
+        errors.push(`Account ${account.platform} token decryption failed: ${decryptErr.message}`);
+        continue;
       }
-    } catch (publishErr: any) {
-      console.error('Meta publishing error:', publishErr);
 
-      // If token expired, update account status
-      if (publishErr instanceof MetaApiError && publishErr.isTokenExpired) {
-        await prisma.socialAccount.update({
-          where: { id: account.id },
-          data: { tokenStatus: 'EXPIRED' }
+      const now = new Date();
+      const idempotencyKey = `idem_instant_${content.id}_${account.id}_${Date.now()}`;
+
+      try {
+        let result: { success: true; postId: string; postUrl: string };
+        if (account.platform === 'FACEBOOK') {
+          result = await MetaService.publishToFacebookPage(
+            account.platformAccountId,
+            rawAccessToken,
+            content.caption,
+            mediaUrl
+          );
+        } else if (account.platform === 'INSTAGRAM') {
+          result = await MetaService.publishToInstagram(
+            account.platformAccountId,
+            rawAccessToken,
+            content.caption,
+            mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
+          );
+        } else {
+          throw new Error(`Unsupported publishing platform: ${account.platform}`);
+        }
+
+        const pub = await prisma.publication.create({
+          data: {
+            contentId: content.id,
+            socialAccountId: account.id,
+            scheduledFor: now,
+            publishedAt: now,
+            status: 'PUBLISHED',
+            platformPostId: result.postId,
+            platformPostUrl: result.postUrl,
+            idempotencyKey
+          }
+        });
+
+        await AuditService.record({
+          tenantId: req.user?.tenantId,
+          userId: req.user?.id,
+          action: 'POST_PUBLISHED_INSTANTLY',
+          entityType: 'Publication',
+          entityId: pub.id,
+          details: {
+            contentTitle: content.title,
+            platform: account.platform,
+            accountName: account.accountName,
+            postUrl: result.postUrl,
+            postId: result.postId
+          }
+        });
+
+        publications.push({
+          ...pub,
+          platform: account.platform,
+          accountName: account.accountName
+        });
+      } catch (publishErr: any) {
+        console.error(`Meta publishing error for ${account.platform}:`, publishErr);
+
+        if (publishErr instanceof MetaApiError && publishErr.isTokenExpired) {
+          await prisma.socialAccount.update({
+            where: { id: account.id },
+            data: { tokenStatus: 'EXPIRED' }
+          });
+        }
+
+        const failedPub = await prisma.publication.create({
+          data: {
+            contentId: content.id,
+            socialAccountId: account.id,
+            scheduledFor: now,
+            status: 'FAILED',
+            errorMessage: publishErr.message || 'Meta API publishing failed',
+            idempotencyKey
+          }
+        });
+
+        errors.push(`${account.platform}: ${publishErr.message || 'Publishing failed'}`);
+        publications.push({
+          ...failedPub,
+          platform: account.platform,
+          accountName: account.accountName
         });
       }
-
-      // Record failed publication in database
-      const failedPub = await prisma.publication.create({
-        data: {
-          contentId: content.id,
-          socialAccountId: account.id,
-          scheduledFor: now,
-          status: 'FAILED',
-          errorMessage: publishErr.message || 'Meta API publishing failed',
-          idempotencyKey
-        }
-      });
-
-      res.status(422).json({
-        success: false,
-        error: publishErr.message || 'Publishing failed on Meta Graph API',
-        code: publishErr.code,
-        isTokenExpired: publishErr.isTokenExpired,
-        publication: failedPub
-      });
-      return;
     }
 
-    // On confirmed publication success, update database records atomically
-    const publication = await prisma.$transaction(async (tx) => {
-      const pub = await tx.publication.create({
-        data: {
-          contentId: content.id,
-          socialAccountId: account.id,
-          scheduledFor: now,
-          publishedAt: now,
-          status: 'PUBLISHED',
-          platformPostId: result.postId,
-          platformPostUrl: result.postUrl,
-          idempotencyKey
-        }
-      });
-
-      await tx.content.update({
+    const publishedList = publications.filter(p => p.status === 'PUBLISHED');
+    if (publishedList.length > 0) {
+      await prisma.content.update({
         where: { id: content.id },
         data: { status: 'PUBLISHED' }
       });
+    }
 
-      return pub;
-    });
-
-    await AuditService.record({
-      tenantId: req.user?.tenantId,
-      userId: req.user?.id,
-      action: 'POST_PUBLISHED_INSTANTLY',
-      entityType: 'Publication',
-      entityId: publication.id,
-      details: {
-        contentTitle: content.title,
-        platform: account.platform,
-        accountName: account.accountName,
-        postUrl: result.postUrl,
-        postId: result.postId
-      }
-    });
+    if (publishedList.length === 0 && publications.length > 0) {
+      res.status(422).json({
+        success: false,
+        error: errors.join('; ') || 'Publishing failed on all selected channels',
+        publications,
+        publication: publications[0]
+      });
+      return;
+    }
 
     res.json({
       success: true,
-      message: `Successfully published to ${account.platform} (${account.accountName})`,
-      publication
+      message: `Successfully published to ${publishedList.length} channel(s): ${publishedList.map(p => p.platform).join(', ')}`,
+      publications,
+      publication: publishedList[0] || publications[0]
     });
   } catch (err: any) {
     console.error('Publish now error:', err);

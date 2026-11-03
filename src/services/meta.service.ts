@@ -381,6 +381,9 @@ export class MetaService {
       let binaryMimeType = 'image/jpeg';
 
       if (mediaUrl) {
+        if (mediaUrl.startsWith('http://') && !mediaUrl.includes('localhost')) {
+          mediaUrl = mediaUrl.replace('http://', 'https://');
+        }
         if (mediaUrl.startsWith('data:image/')) {
           const matches = mediaUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
           if (matches && matches.length === 3) {
@@ -494,6 +497,10 @@ export class MetaService {
       ? '17841451672167206'
       : igUserId;
     const activeToken = await MetaService.resolvePageAccessToken('1485024198017475', accessToken);
+
+    if (imageUrl && imageUrl.startsWith('http://') && !imageUrl.includes('localhost')) {
+      imageUrl = imageUrl.replace('http://', 'https://');
+    }
 
     try {
       // Step 1: Create Media Container
