@@ -96,7 +96,7 @@ export class MetaService {
       'instagram_content_publish'
     ].join(',');
 
-    const oauthUrl = `https://www.facebook.com/${config.meta.apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}&response_type=code`;
+    const oauthUrl = `https://www.facebook.com/${config.meta.apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scopes}&state=${state}&response_type=code&auth_type=rerequest`;
 
     return {
       oauthUrl,
