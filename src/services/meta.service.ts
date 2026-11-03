@@ -389,51 +389,30 @@ export class MetaService {
       let postId: string = '';
 
       if (mediaUrl) {
-        let photoId: string = '';
-
         if (isLocalBinary && binaryBuffer) {
-          // Step 1: Upload photo as unpublished binary asset
+          // Direct photo post with binary buffer and caption message
           const form = new FormData();
           form.append('access_token', accessToken);
-          form.append('published', 'false');
+          form.append('message', message || '');
           const blob = new Blob([new Uint8Array(binaryBuffer)], { type: binaryMimeType });
           form.append('source', blob, binaryFileName);
 
           const photoRes = await axios.post(`${config.meta.graphBaseUrl}/${targetPageId}/photos`, form, {
             timeout: 45000
           });
-          photoId = photoRes.data?.id;
+          postId = photoRes.data?.post_id || photoRes.data?.id;
         } else {
-          // Step 1: Upload photo as unpublished URL asset
+          // Direct photo URL post with caption message directly on main Page timeline
           const photoRes = await axios.post(
             `${config.meta.graphBaseUrl}/${targetPageId}/photos`,
             {
               access_token: accessToken,
               url: mediaUrl,
-              published: false
+              message: message || ''
             },
             { timeout: 30000 }
           );
-          photoId = photoRes.data?.id;
-        }
-
-        if (photoId) {
-          // Step 2: Publish Page feed timeline post with attached photo (creates full timeline post on 'All' tab)
-          try {
-            const feedRes = await axios.post(
-              `${config.meta.graphBaseUrl}/${targetPageId}/feed`,
-              {
-                access_token: accessToken,
-                message: message || '',
-                attached_media: [{ media_fbid: photoId }]
-              },
-              { timeout: 30000 }
-            );
-            postId = feedRes.data?.id;
-          } catch (feedErr) {
-            console.warn('Feed attachment fallback to photoId:', feedErr);
-            postId = photoId;
-          }
+          postId = photoRes.data?.post_id || photoRes.data?.id;
         }
       } else {
         // Text-only status update on main Page feed
