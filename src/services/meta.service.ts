@@ -832,6 +832,13 @@ export class MetaService {
       return { success: true, messageId: messageId || `msg_${Date.now()}` };
     } catch (error: any) {
       const metaErr = error.response?.data?.error;
+      if (metaErr?.code === 10 || metaErr?.error_subcode === 2018278) {
+        throw new MetaApiError(
+          `Meta 24-Hour Policy Window: This message is older than 24 hours. Meta Messenger Platform Policy strictly permits replies only within 24 hours of the customer's message. Please send a fresh message to the Page to test live DM replies.`,
+          10,
+          metaErr?.error_subcode
+        );
+      }
       throw new MetaApiError(
         `Facebook message sending failed: ${metaErr?.message || error.message}`,
         metaErr?.code
