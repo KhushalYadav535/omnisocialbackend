@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../services/db.service';
 import { MetaService, MetaApiError } from '../services/meta.service';
+import { LinkedInService } from '../services/linkedin.service';
 import { CryptoService } from '../services/crypto.service';
 import { AuditService } from '../services/audit.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
@@ -94,6 +95,20 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
             rawAccessToken,
             content.caption,
             mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
+          );
+        } else if (account.platform === 'LINKEDIN') {
+          let authorUrn = `urn:li:person:${account.platformAccountId}`;
+          try {
+            const meta = account.metadata ? JSON.parse(account.metadata) : {};
+            if (meta.personUrn) authorUrn = meta.personUrn;
+          } catch {
+            // Keep default
+          }
+          result = await LinkedInService.publishPost(
+            authorUrn,
+            rawAccessToken,
+            content.caption,
+            mediaUrl
           );
         } else {
           throw new Error(`Unsupported publishing platform: ${account.platform}`);

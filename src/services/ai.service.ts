@@ -228,6 +228,7 @@ ${brandContext.bannedKeywords.length > 0 ? `- FORBIDDEN WORDS: ${brandContext.ba
 ### Formatting Specifications:
 - Facebook Variant: Conversational, community-focused, storytelling with line breaks and clear CTA.
 - Instagram Variant: Catchy hook, visually expressive with tasteful emojis, bullet points, CTA, followed by clean hashtag spacing.
+- LinkedIn Variant: Professional, insightful, thought-leadership style, structured spacing, high-value takeaway, and professional CTA.
 - Format Requested: ${format.toUpperCase()} (e.g. POST, REEL, STORY, CAROUSEL)
 
 Respond ONLY with a valid JSON object matching this schema:
@@ -235,7 +236,8 @@ Respond ONLY with a valid JSON object matching this schema:
   "caption": "Primary complete caption",
   "variants": {
     "facebook": "Facebook optimized text",
-    "instagram": "Instagram optimized text"
+    "instagram": "Instagram optimized text",
+    "linkedin": "LinkedIn optimized text"
   },
   "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4", "#Tag5"],
   "callToAction": "Short call to action phrase",

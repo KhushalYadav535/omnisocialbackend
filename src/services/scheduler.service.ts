@@ -1,5 +1,6 @@
 import { prisma } from './db.service';
 import { MetaService, MetaApiError } from './meta.service';
+import { LinkedInService } from './linkedin.service';
 import { CryptoService } from './crypto.service';
 import { AuditService } from './audit.service';
 
@@ -205,6 +206,20 @@ export class SchedulerService {
               rawAccessToken,
               content.caption,
               mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
+            );
+          } else if (account.platform === 'LINKEDIN') {
+            let authorUrn = `urn:li:person:${account.platformAccountId}`;
+            try {
+              const meta = account.metadata ? JSON.parse(account.metadata) : {};
+              if (meta.personUrn) authorUrn = meta.personUrn;
+            } catch {
+              // keep default
+            }
+            res = await LinkedInService.publishPost(
+              authorUrn,
+              rawAccessToken,
+              content.caption,
+              mediaUrl
             );
           } else {
             throw new Error(`Unsupported publishing platform: ${account.platform}`);

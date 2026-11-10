@@ -1,7 +1,10 @@
 import { Router, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { prisma } from '../services/db.service';
 import { AiService } from '../services/ai.service';
 import {
+  OpenRouterService,
   OpenRouterConfigurationError,
   OpenRouterAuthError,
   OpenRouterRateLimitError
@@ -17,7 +20,9 @@ router.use(requireTenant);
  * Common error handler for OpenRouter AI operations
  */
 function handleAiError(err: any, res: Response, defaultMessage: string) {
-  console.error(`[AI Route Error] ${defaultMessage}:`, err.message);
+  const responseData = err.response?.data;
+  const rawMsg = responseData?.error?.message || responseData?.message || err.message || defaultMessage;
+  console.error(`[AI Route Error] ${defaultMessage}:`, rawMsg);
 
   if (err instanceof OpenRouterConfigurationError) {
     res.status(503).json({
@@ -44,9 +49,25 @@ function handleAiError(err: any, res: Response, defaultMessage: string) {
     return;
   }
 
-  res.status(500).json({
+  // 402 Payment Required / Credits Insufficient or In-Flight Request Lock
+  if (err.response?.status === 402 || responseData?.error?.code === 402 || rawMsg.includes('credits') || rawMsg.includes('402')) {
+    let friendly = rawMsg;
+    if (rawMsg.includes('in-flight') || rawMsg.includes('in_flight_budget')) {
+      friendly = 'OpenRouter In-Flight Cooldown: Your previous generation job is settling. Please wait 1-2 minutes before submitting another video, or add credits at https://openrouter.ai/settings/credits.';
+    } else if (rawMsg.includes('exceeds your available credits') || rawMsg.includes('Insufficient credits')) {
+      friendly = 'OpenRouter Credit Limit: This model/duration exceeds your available credits balance (~$0.94 remaining). Please select a 4-second duration or add credits at https://openrouter.ai/settings/credits.';
+    }
+    res.status(402).json({
+      error: 'INSUFFICIENT_CREDITS',
+      message: friendly,
+      details: rawMsg
+    });
+    return;
+  }
+
+  res.status(err.response?.status || 500).json({
     error: 'AI_OPERATION_FAILED',
-    message: err.message || defaultMessage
+    message: rawMsg
   });
 }
 
@@ -190,6 +211,148 @@ router.get('/usage', async (req: AuthRequest, res: Response): Promise<void> => {
     res.json({ success: true, usage: summary });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to retrieve AI usage metrics', details: err.message });
+  }
+});
+
+// 5. Curated AI Media Models for Content Studio
+router.get('/media-models', async (_req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    res.json({
+      success: true,
+      videoModels: OpenRouterService.getCuratedVideoModels(),
+      imageModels: OpenRouterService.getCuratedImageModels()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to fetch media models', details: err.message });
+  }
+});
+
+// 6. Submit AI Video / Reel Generation Job
+router.post('/generate-video', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { prompt, model, aspectRatio, duration, resolution, generateAudio } = req.body;
+    if (!prompt || typeof prompt !== 'string') {
+      res.status(400).json({ error: 'prompt is required for video generation' });
+      return;
+    }
+
+    const job = await OpenRouterService.submitVideoGeneration({
+      prompt,
+      model,
+      aspectRatio,
+      duration: duration ? Number(duration) : undefined,
+      resolution,
+      generateAudio: generateAudio !== false
+    });
+
+    res.json({
+      success: true,
+      jobId: job.id,
+      status: job.status,
+      pollingUrl: job.pollingUrl
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to submit video generation job');
+  }
+});
+
+// 7. Poll Video Status and Persist Finished MP4 to Local Uploads
+router.get('/video-status/:jobId', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawJobId = req.params.jobId;
+    const jobId = typeof rawJobId === 'string' ? rawJobId : Array.isArray(rawJobId) ? rawJobId[0] : '';
+    if (!jobId) {
+      res.status(400).json({ error: 'jobId is required' });
+      return;
+    }
+
+    const poll = await OpenRouterService.pollVideoStatus(jobId);
+
+    if (poll.status === 'completed') {
+      const cleanId = jobId.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `reel_ai_${cleanId}.mp4`;
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      const filePath = path.join(uploadsDir, filename);
+
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'http';
+      const localUrl = `${protocol}://${host}/uploads/${filename}`;
+
+      // Check if file already downloaded
+      if (!fs.existsSync(filePath) && poll.unsignedUrls && poll.unsignedUrls.length > 0) {
+        try {
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const videoBuffer = await OpenRouterService.downloadVideoBuffer(poll.unsignedUrls[0]);
+          fs.writeFileSync(filePath, videoBuffer);
+        } catch (downloadErr: any) {
+          console.warn('[OpenRouter] Could not save video buffer locally, using direct content URL:', downloadErr.message);
+        }
+      }
+
+      res.json({
+        success: true,
+        status: 'completed',
+        videoUrl: fs.existsSync(filePath) ? localUrl : poll.unsignedUrls?.[0] || localUrl,
+        rawUrl: poll.unsignedUrls?.[0]
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      status: poll.status,
+      error: poll.error
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to poll video generation status');
+  }
+});
+
+// 8. Generate Photorealistic Image with OpenRouter (FLUX 3)
+router.post('/generate-image', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { prompt, model, aspectRatio } = req.body;
+    if (!prompt || typeof prompt !== 'string') {
+      res.status(400).json({ error: 'prompt is required for image generation' });
+      return;
+    }
+
+    const result = await OpenRouterService.generateImage({
+      prompt,
+      model,
+      aspectRatio
+    });
+
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+
+    let imageUrl: string;
+
+    if (result.b64_json) {
+      const filename = `image_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+      const filePath = path.join(uploadsDir, filename);
+      const buffer = Buffer.from(result.b64_json, 'base64');
+      fs.writeFileSync(filePath, buffer);
+      imageUrl = `${protocol}://${host}/uploads/${filename}`;
+    } else if (result.url) {
+      imageUrl = result.url;
+    } else {
+      throw new Error('Image generation did not return image data');
+    }
+
+    res.json({
+      success: true,
+      imageUrl
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to generate photorealistic image');
   }
 });
 

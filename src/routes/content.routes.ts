@@ -27,14 +27,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max for high-def videos and Reels
   fileFilter: (_req, file, cb) => {
-    const allowedExts = /\.(jpe?g|png|webp|gif)$/i;
-    const isImage = file.mimetype.startsWith('image/') || allowedExts.test(file.originalname);
-    if (isImage) {
+    const allowedExts = /\.(jpe?g|png|webp|gif|mp4|mov|webm|m4v|avi)$/i;
+    const isAllowed = file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || allowedExts.test(file.originalname);
+    if (isAllowed) {
       cb(null, true);
     } else {
-      cb(new Error('Only valid image files (JPG, PNG, WEBP, GIF) are allowed'));
+      cb(new Error('Only valid image (JPG, PNG, WEBP, GIF) and video (MP4, MOV, WEBM) files are allowed'));
     }
   }
 });
@@ -42,11 +42,11 @@ const upload = multer({
 router.use(authenticateToken);
 router.use(requireTenant);
 
-// 0. Upload Media Asset for Content Creation
+// 0. Upload Media Asset for Content Creation (Image or Video)
 router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.file) {
-      res.status(400).json({ error: 'No image file uploaded' });
+      res.status(400).json({ error: 'No media file uploaded' });
       return;
     }
 
@@ -54,6 +54,7 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
     const protocol = req.protocol || 'http';
     const relativeUrl = `/uploads/${req.file.filename}`;
     const fullUrl = `${protocol}://${host}${relativeUrl}`;
+    const isVideo = req.file.mimetype.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(req.file.filename);
 
     res.json({
       success: true,
@@ -62,7 +63,8 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
       filename: req.file.filename,
       originalName: req.file.originalname,
       size: req.file.size,
-      mimetype: req.file.mimetype
+      mimetype: req.file.mimetype,
+      isVideo
     });
   } catch (err: any) {
     console.error('File upload error:', err);

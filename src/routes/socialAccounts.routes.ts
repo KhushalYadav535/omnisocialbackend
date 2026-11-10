@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { config } from '../config';
 import { prisma } from '../services/db.service';
 import { MetaService } from '../services/meta.service';
+import { LinkedInService } from '../services/linkedin.service';
 import { CryptoService } from '../services/crypto.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
 import { AuditService } from '../services/audit.service';
@@ -109,6 +110,26 @@ router.get('/oauth-url', async (req: AuthRequest, res: Response): Promise<void> 
       }
     });
 
+    if (platform === 'LINKEDIN') {
+      const { oauthUrl, state } = LinkedInService.getAuthorizationUrl(
+        req.user?.id!,
+        req.user?.tenantId!,
+        brandId,
+        undefined,
+        nonce,
+        typeof redirectUri === 'string' ? redirectUri : undefined
+      );
+
+      res.json({
+        oauthUrl,
+        state,
+        platform: 'LINKEDIN',
+        customAppUsed: false,
+        metaAppId: config.linkedin.clientId
+      });
+      return;
+    }
+
     const { oauthUrl, state } = MetaService.getAuthorizationUrl(
       req.user?.id!,
       req.user?.tenantId!,
@@ -200,6 +221,97 @@ router.post('/oauth-callback', async (req: AuthRequest, res: Response): Promise<
 
     if (!brand) {
       res.status(404).json({ error: 'Target brand not found or does not belong to your organization' });
+      return;
+    }
+
+    // Handle LinkedIn OAuth directly if initiated for LinkedIn
+    if ((statePayload as any).platform === 'LINKEDIN') {
+      const tokenData = await LinkedInService.exchangeCodeForToken(
+        code,
+        undefined,
+        undefined,
+        typeof redirectUri === 'string' ? redirectUri : undefined
+      );
+
+      const profile = await LinkedInService.fetchUserProfile(tokenData.accessToken);
+      const encryptedToken = CryptoService.encrypt(tokenData.accessToken);
+      const tokenExpiresAt = new Date(Date.now() + tokenData.expiresIn * 1000);
+
+      const existingLi = await prisma.socialAccount.findFirst({
+        where: {
+          brandId: brand.id,
+          platform: 'LINKEDIN',
+          platformAccountId: profile.sub
+        }
+      });
+
+      let liAccount;
+      if (existingLi) {
+        liAccount = await prisma.socialAccount.update({
+          where: { id: existingLi.id },
+          data: {
+            accountName: profile.name,
+            username: profile.email || profile.name,
+            profilePicUrl: profile.picture || existingLi.profilePicUrl,
+            pageCategory: 'LinkedIn Profile',
+            accessToken: encryptedToken,
+            tokenExpiresAt,
+            tokenStatus: 'VALID',
+            isConnected: true,
+            lastSyncedAt: new Date(),
+            metadata: JSON.stringify({
+              personUrn: profile.personUrn,
+              email: profile.email,
+              scope: tokenData.scope
+            })
+          }
+        });
+      } else {
+        liAccount = await prisma.socialAccount.create({
+          data: {
+            brandId: brand.id,
+            platform: 'LINKEDIN',
+            platformAccountId: profile.sub,
+            accountName: profile.name,
+            username: profile.email || profile.name.toLowerCase().replace(/[^a-z0-9]+/g, '.'),
+            profilePicUrl: profile.picture || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&h=120&fit=crop',
+            pageCategory: 'LinkedIn Profile',
+            accessToken: encryptedToken,
+            tokenExpiresAt,
+            tokenStatus: 'VALID',
+            isConnected: true,
+            lastSyncedAt: new Date(),
+            capabilities: JSON.stringify(['PUBLISHING', 'COMMENTS']),
+            metadata: JSON.stringify({
+              personUrn: profile.personUrn,
+              email: profile.email,
+              scope: tokenData.scope
+            })
+          }
+        });
+      }
+
+      await AuditService.record({
+        tenantId: req.user?.tenantId,
+        userId: req.user?.id,
+        action: 'LINKEDIN_ACCOUNT_CONNECTED',
+        entityType: 'SocialAccount',
+        entityId: liAccount.id,
+        details: {
+          brandName: brand.name,
+          accountName: profile.name,
+          personUrn: profile.personUrn
+        }
+      });
+
+      res.json({
+        success: true,
+        brandId: brand.id,
+        brandName: brand.name,
+        isDirectSingleAccount: true,
+        account: sanitizeAccount(liAccount),
+        discoveredAccounts: []
+      });
       return;
     }
 

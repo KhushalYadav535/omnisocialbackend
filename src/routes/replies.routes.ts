@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../services/db.service';
 import { AuditService } from '../services/audit.service';
 import { MetaService, MetaApiError } from '../services/meta.service';
+import { LinkedInService } from '../services/linkedin.service';
 import { CryptoService } from '../services/crypto.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
 
@@ -136,6 +137,21 @@ router.post('/:id/approve-and-send', async (req: AuthRequest, res: Response): Pr
             finalContent
           );
           platformReplyId = igRes.replyId;
+        } else if (reply.interaction.platform === 'LINKEDIN') {
+          let authorUrn = `urn:li:person:${socialAccount.platformAccountId}`;
+          try {
+            const meta = socialAccount.metadata ? JSON.parse(socialAccount.metadata) : {};
+            if (meta.personUrn) authorUrn = meta.personUrn;
+          } catch {
+            // keep default
+          }
+          const liRes = await LinkedInService.replyToComment(
+            reply.interaction.platformInteractionId,
+            authorUrn,
+            rawToken,
+            finalContent
+          );
+          platformReplyId = liRes.commentId;
         }
       } catch (metaErr: any) {
         console.error('Meta comment reply dispatch error:', metaErr);

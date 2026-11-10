@@ -16,6 +16,12 @@ export const config = {
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || 'social_media_secure_verify_token_2026',
     tokenEncryptionKey: process.env.META_TOKEN_ENCRYPTION_KEY || '9f3c8a1b4e6d2f5a7c0e8b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a'
   },
+  linkedin: {
+    clientId: process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_Id || '',
+    clientSecret: process.env.LINKEDIN_CLIENT_SECRET || process.env.Linkedin_Secret_Token || '',
+    redirectUri: process.env.LINKEDIN_REDIRECT_URI || `${process.env.FRONTEND_URL || 'http://localhost:3000'}/accounts/callback`,
+    apiVersion: process.env.LINKEDIN_API_VERSION || '202610'
+  },
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || '',
     baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
