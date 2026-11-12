@@ -6,6 +6,7 @@ import { config } from './config';
 import { prisma } from './services/db.service';
 import { SchedulerService } from './services/scheduler.service';
 import { CryptoService } from './services/crypto.service';
+import { DbSyncService } from './services/dbSync.service';
 
 import authRoutes from './routes/auth.routes';
 import superadminRoutes from './routes/superadmin.routes';
@@ -138,6 +139,9 @@ async function start() {
     // 2. Connect to PostgreSQL database via Prisma
     await prisma.$connect();
     console.log('✅ PostgreSQL Database connected successfully via Prisma');
+
+    // 3. Auto-sync database columns & tables (guarantees production resilience on Render/Railway)
+    await DbSyncService.autoSyncDatabase();
 
     // Start background worker for scheduled publishing
     SchedulerService.startWorker();

@@ -208,24 +208,47 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const contentStatus = scheduledFor ? 'SCHEDULED' : status;
 
     const result = await prisma.$transaction(async (tx) => {
-      const content = await tx.content.create({
-        data: {
-          brandId,
-          title: title || caption.slice(0, 40) + '...',
-          rawIdea: rawIdea || null,
-          caption,
-          hashtags: hashtagsStr,
-          mediaUrls: mediaUrlsStr,
-          targetPlatforms: targetPlatformsStr,
-          format,
-          status: contentStatus,
-          firstComment: firstComment ? String(firstComment) : null,
-          viralityScore: viralityScore ? Number(viralityScore) : null,
-          isEvergreen: Boolean(isEvergreen),
-          recycleIntervalDays: Number(recycleIntervalDays) || 60,
-          createdByUserId: req.user!.id
+      let content;
+      try {
+        content = await tx.content.create({
+          data: {
+            brandId,
+            title: title || caption.slice(0, 40) + '...',
+            rawIdea: rawIdea || null,
+            caption,
+            hashtags: hashtagsStr,
+            mediaUrls: mediaUrlsStr,
+            targetPlatforms: targetPlatformsStr,
+            format,
+            status: contentStatus,
+            firstComment: firstComment ? String(firstComment) : null,
+            viralityScore: viralityScore ? Number(viralityScore) : null,
+            isEvergreen: Boolean(isEvergreen),
+            recycleIntervalDays: Number(recycleIntervalDays) || 60,
+            createdByUserId: req.user!.id
+          }
+        });
+      } catch (createErr: any) {
+        if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
+          // Graceful fallback if production database columns are still syncing
+          content = await tx.content.create({
+            data: {
+              brandId,
+              title: title || caption.slice(0, 40) + '...',
+              rawIdea: rawIdea || null,
+              caption,
+              hashtags: hashtagsStr,
+              mediaUrls: mediaUrlsStr,
+              targetPlatforms: targetPlatformsStr,
+              format,
+              status: contentStatus,
+              createdByUserId: req.user!.id
+            }
+          });
+        } else {
+          throw createErr;
         }
-      });
+      }
 
       // Initial version record
       await tx.contentVersion.create({
@@ -441,25 +464,47 @@ router.post('/:id/recycle-now', async (req: AuthRequest, res: Response): Promise
     targetSchedule.setDate(targetSchedule.getDate() + 1);
     targetSchedule.setHours(19, 30, 0, 0);
 
-    const recycled = await prisma.content.create({
-      data: {
-        brandId: original.brandId,
-        title: `[Recycled] ${original.title || 'Evergreen Post'}`,
-        rawIdea: original.rawIdea,
-        caption: original.caption,
-        hashtags: original.hashtags,
-        mediaUrls: original.mediaUrls,
-        targetPlatforms: original.targetPlatforms,
-        format: original.format,
-        status: 'SCHEDULED',
-        firstComment: original.firstComment,
-        viralityScore: original.viralityScore,
-        isEvergreen: true,
-        recycleIntervalDays: original.recycleIntervalDays,
-        lastRecycledAt: new Date(),
-        createdByUserId: req.user!.id
+    let recycled;
+    try {
+      recycled = await prisma.content.create({
+        data: {
+          brandId: original.brandId,
+          title: `[Recycled] ${original.title || 'Evergreen Post'}`,
+          rawIdea: original.rawIdea,
+          caption: original.caption,
+          hashtags: original.hashtags,
+          mediaUrls: original.mediaUrls,
+          targetPlatforms: original.targetPlatforms,
+          format: original.format,
+          status: 'SCHEDULED',
+          firstComment: (original as any).firstComment || null,
+          viralityScore: (original as any).viralityScore || null,
+          isEvergreen: true,
+          recycleIntervalDays: (original as any).recycleIntervalDays || 60,
+          lastRecycledAt: new Date(),
+          createdByUserId: req.user!.id
+        }
+      });
+    } catch (createErr: any) {
+      if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
+        recycled = await prisma.content.create({
+          data: {
+            brandId: original.brandId,
+            title: `[Recycled] ${original.title || 'Evergreen Post'}`,
+            rawIdea: original.rawIdea,
+            caption: original.caption,
+            hashtags: original.hashtags,
+            mediaUrls: original.mediaUrls,
+            targetPlatforms: original.targetPlatforms,
+            format: original.format,
+            status: 'SCHEDULED',
+            createdByUserId: req.user!.id
+          }
+        });
+      } else {
+        throw createErr;
       }
-    });
+    }
 
     // Mark original recycled timestamp
     await prisma.content.update({

@@ -567,22 +567,43 @@ Return ONLY valid raw JSON without markdown code fences or backticks. All text m
       const createdPubs: any[] = [];
 
       for (const p of posts) {
-        // Create Content post
-        const content = await tx.content.create({
-          data: {
-            brandId: brand.id,
-            title: `[${p.phaseLabel}] ${p.title}`,
-            caption: p.caption,
-            hashtags: JSON.stringify(p.hashtags || []),
-            mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-            targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
-            format: p.format || 'POST',
-            status: 'SCHEDULED',
-            firstComment: p.firstComment || null,
-            viralityScore: 88 + Math.floor(Math.random() * 9),
-            createdByUserId: userId
+        // Create Content post with resilience
+        let content;
+        try {
+          content = await tx.content.create({
+            data: {
+              brandId: brand.id,
+              title: `[${p.phaseLabel}] ${p.title}`,
+              caption: p.caption,
+              hashtags: JSON.stringify(p.hashtags || []),
+              mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
+              targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+              format: p.format || 'POST',
+              status: 'SCHEDULED',
+              firstComment: p.firstComment || null,
+              viralityScore: 88 + Math.floor(Math.random() * 9),
+              createdByUserId: userId
+            }
+          });
+        } catch (createErr: any) {
+          if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
+            content = await tx.content.create({
+              data: {
+                brandId: brand.id,
+                title: `[${p.phaseLabel}] ${p.title}`,
+                caption: p.caption,
+                hashtags: JSON.stringify(p.hashtags || []),
+                mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
+                targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+                format: p.format || 'POST',
+                status: 'SCHEDULED',
+                createdByUserId: userId
+              }
+            });
+          } else {
+            throw createErr;
           }
-        });
+        }
 
         // Create ContentVersion
         await tx.contentVersion.create({
