@@ -4,6 +4,7 @@ import { authenticateToken, requireTenant, AuthRequest } from '../middleware/aut
 import { requirePermission } from '../middleware/rbac.middleware';
 import { MetaService } from '../services/meta.service';
 import { CryptoService } from '../services/crypto.service';
+import { ClientReportService } from '../services/clientReport.service';
 
 const router = Router();
 
@@ -525,6 +526,37 @@ router.get('/export', requirePermission('EXPORT_DATA'), async (req: AuthRequest,
   } catch (err: any) {
     console.error('Analytics CSV export error:', err);
     res.status(500).json({ error: err.message || 'Failed to export analytics CSV' });
+  }
+});
+
+// Feature 3B: 1-Click Executive AI Client Performance Report (PDF Export)
+router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { brandId, period = 'month' } = req.query;
+
+    if (!brandId || typeof brandId !== 'string') {
+      res.status(400).json({ error: 'brandId query parameter is required' });
+      return;
+    }
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+
+    const report = await ClientReportService.generateClientReportPdf(
+      brandId,
+      req.user?.tenantId!,
+      host,
+      protocol,
+      period as 'week' | 'month'
+    );
+
+    res.json({
+      success: true,
+      report
+    });
+  } catch (err: any) {
+    console.error('Client report PDF generation error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate client report PDF' });
   }
 });
 

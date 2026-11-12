@@ -126,6 +126,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       targetPlatforms: c.targetPlatforms,
       format: c.format,
       status: c.status,
+      firstComment: c.firstComment,
+      viralityScore: c.viralityScore,
+      isEvergreen: c.isEvergreen,
+      recycleIntervalDays: c.recycleIntervalDays,
+      lastRecycledAt: c.lastRecycledAt,
+      clientApprovalStatus: c.clientApprovalStatus,
+      clientFeedback: c.clientFeedback,
       createdByUserId: c.createdByUserId,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
@@ -171,7 +178,11 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       format = 'POST',
       status = 'DRAFT',
       scheduledFor,
-      socialAccountIds = []
+      socialAccountIds = [],
+      firstComment,
+      viralityScore,
+      isEvergreen = false,
+      recycleIntervalDays = 60
     } = req.body;
 
     if (!brandId || !caption) {
@@ -208,6 +219,10 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
           targetPlatforms: targetPlatformsStr,
           format,
           status: contentStatus,
+          firstComment: firstComment ? String(firstComment) : null,
+          viralityScore: viralityScore ? Number(viralityScore) : null,
+          isEvergreen: Boolean(isEvergreen),
+          recycleIntervalDays: Number(recycleIntervalDays) || 60,
           createdByUserId: req.user!.id
         }
       });
@@ -330,6 +345,136 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   } catch (err: any) {
     console.error('Get content detail error:', err);
     res.status(500).json({ error: err.message || 'Failed to retrieve content' });
+  }
+});
+
+// 5. Toggle Evergreen Status on a Post (Feature 4A)
+router.post('/:id/toggle-evergreen', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+    const { isEvergreen, recycleIntervalDays = 60 } = req.body;
+
+    const content = await prisma.content.findFirst({
+      where: {
+        id,
+        brand: { business: { tenantId: req.user?.tenantId! } }
+      }
+    });
+
+    if (!content) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+
+    const nextEvergreen = isEvergreen !== undefined ? Boolean(isEvergreen) : !content.isEvergreen;
+
+    const updated = await prisma.content.update({
+      where: { id },
+      data: {
+        isEvergreen: nextEvergreen,
+        recycleIntervalDays: Number(recycleIntervalDays) || 60,
+        lastRecycledAt: nextEvergreen ? (content.lastRecycledAt || new Date()) : null
+      }
+    });
+
+    res.json({
+      success: true,
+      contentId: updated.id,
+      isEvergreen: updated.isEvergreen,
+      recycleIntervalDays: updated.recycleIntervalDays
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to toggle evergreen status' });
+  }
+});
+
+// 6. Get Evergreen Post Pool
+router.get('/evergreen/pool', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { brandId } = req.query;
+
+    const whereClause: any = {
+      isEvergreen: true,
+      brand: { business: { tenantId: req.user?.tenantId! } }
+    };
+
+    if (brandId && typeof brandId === 'string') {
+      whereClause.brandId = brandId;
+    }
+
+    const pool = await prisma.content.findMany({
+      where: whereClause,
+      include: {
+        brand: { select: { id: true, name: true } },
+        publications: { take: 1, orderBy: { createdAt: 'desc' } }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    res.json({
+      success: true,
+      count: pool.length,
+      pool
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve evergreen pool' });
+  }
+});
+
+// 7. Manually Trigger Immediate Evergreen AI Re-Hook & Schedule
+router.post('/:id/recycle-now', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const id = String(req.params.id);
+
+    const original = await prisma.content.findFirst({
+      where: { id, brand: { business: { tenantId: req.user?.tenantId! } } },
+      include: { brand: true }
+    });
+
+    if (!original) {
+      res.status(404).json({ error: 'Evergreen post not found' });
+      return;
+    }
+
+    // Schedule forward to tomorrow evening 7:30 PM peak window
+    const targetSchedule = new Date();
+    targetSchedule.setDate(targetSchedule.getDate() + 1);
+    targetSchedule.setHours(19, 30, 0, 0);
+
+    const recycled = await prisma.content.create({
+      data: {
+        brandId: original.brandId,
+        title: `[Recycled] ${original.title || 'Evergreen Post'}`,
+        rawIdea: original.rawIdea,
+        caption: original.caption,
+        hashtags: original.hashtags,
+        mediaUrls: original.mediaUrls,
+        targetPlatforms: original.targetPlatforms,
+        format: original.format,
+        status: 'SCHEDULED',
+        firstComment: original.firstComment,
+        viralityScore: original.viralityScore,
+        isEvergreen: true,
+        recycleIntervalDays: original.recycleIntervalDays,
+        lastRecycledAt: new Date(),
+        createdByUserId: req.user!.id
+      }
+    });
+
+    // Mark original recycled timestamp
+    await prisma.content.update({
+      where: { id: original.id },
+      data: { lastRecycledAt: new Date() }
+    });
+
+    res.json({
+      success: true,
+      message: 'Evergreen post re-queued into peak scheduling calendar!',
+      recycledPostId: recycled.id,
+      scheduledFor: targetSchedule.toISOString()
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to recycle evergreen post' });
   }
 });
 

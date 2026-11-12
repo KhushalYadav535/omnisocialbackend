@@ -10,6 +10,11 @@ import {
   OpenRouterRateLimitError
 } from '../services/openrouter.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
+import { CarouselService } from '../services/carousel.service';
+import { TimingService } from '../services/timing.service';
+import { RepurposeService } from '../services/repurpose.service';
+import { ViralityService } from '../services/virality.service';
+import { CampaignArchitectService } from '../services/campaignArchitect.service';
 
 const router = Router();
 
@@ -353,6 +358,338 @@ router.post('/generate-image', async (req: AuthRequest, res: Response): Promise<
     });
   } catch (err: any) {
     handleAiError(err, res, 'Failed to generate photorealistic image');
+  }
+});
+
+// 9. Generate AI LinkedIn Carousel / Slide-Deck & Render PDF
+router.post('/generate-carousel', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { topic, theme = 'midnight', slideCount = 5, brandId } = req.body;
+
+    if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
+      res.status(400).json({ error: 'topic is required to generate a carousel' });
+      return;
+    }
+
+    // Determine brand name for slide branding
+    let brandName = 'OmniSocial';
+    if (brandId) {
+      const brand = await prisma.brand.findFirst({
+        where: { id: brandId, business: { tenantId: req.user?.tenantId! } }
+      });
+      if (brand?.name) {
+        brandName = brand.name;
+      }
+    }
+
+    const validThemes = ['midnight', 'royal', 'minimal', 'sunset'] as const;
+    const selectedTheme = validThemes.includes(theme) ? theme : 'midnight';
+    const count = Math.min(Math.max(Number(slideCount) || 5, 3), 10);
+
+    // 1. Generate Structured Slide Deck JSON via OpenRouter LLM
+    const carouselContent = await CarouselService.generateCarouselContent(
+      topic.trim(),
+      selectedTheme,
+      count,
+      brandName
+    );
+
+    // 2. Render High-Resolution Square PDF Document (LinkedIn Carousel format)
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+    const pdfResult = await CarouselService.renderCarouselPdf(
+      carouselContent,
+      brandName,
+      host,
+      protocol
+    );
+
+    const fullCarousel = {
+      ...carouselContent,
+      pdfUrl: pdfResult.pdfUrl,
+      pdfPath: pdfResult.pdfPath,
+      filename: pdfResult.filename,
+      brandName
+    };
+
+    res.json({
+      success: true,
+      carousel: fullCarousel
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to generate LinkedIn carousel');
+  }
+});
+
+// 10. AI "Best Time to Post" Optimal Timing Slots
+router.get('/optimal-timing', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const platform = (req.query.platform as string) || 'ALL';
+    const tzOffset = req.query.tzOffset ? Number(req.query.tzOffset) : -330;
+
+    const slots = TimingService.getOptimalSlots(platform, tzOffset);
+
+    res.json({
+      success: true,
+      platform,
+      slots
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      error: 'OPTIMAL_TIMING_FAILED',
+      message: err.message || 'Failed to calculate optimal post timing slots'
+    });
+  }
+});
+
+// 11. Feature 1A: 1-Click "URL / Blog to Multi-Platform Campaign" Auto-Repurposer
+router.post('/repurpose-url', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { url, rawText, brandId } = req.body;
+
+    if (!url && !rawText) {
+      res.status(400).json({ error: 'url or rawText is required to repurpose content' });
+      return;
+    }
+
+    let brandName = 'OmniSocial';
+    if (brandId) {
+      const brand = await prisma.brand.findFirst({
+        where: { id: brandId, business: { tenantId: req.user?.tenantId! } }
+      });
+      if (brand?.name) brandName = brand.name;
+    }
+
+    const campaign = await RepurposeService.repurposeContent(url, rawText, brandName);
+
+    res.json({
+      success: true,
+      campaign
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to repurpose article content');
+  }
+});
+
+// 12. Feature 1C: AI Virality Score Meter & Hook Suggestions
+router.post('/virality-score', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { caption, platform = 'LINKEDIN', hashtags = [], hasMedia = true, mediaType = 'IMAGE' } = req.body;
+
+    const analysis = await ViralityService.evaluatePost(
+      caption,
+      platform,
+      Array.isArray(hashtags) ? hashtags : [],
+      hasMedia,
+      mediaType
+    );
+
+    res.json({
+      success: true,
+      analysis
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to analyze virality score');
+  }
+});
+
+// 13. "Start From Zero" Campaign Architect: Generate Full Marketing Roadmap
+router.post('/campaign-roadmap', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const {
+      productDescription,
+      businessType = 'PHYSICAL_PRODUCT',
+      campaignGoal = 'SALES',
+      durationDays = 7,
+      startDate,
+      platforms = ['INSTAGRAM', 'LINKEDIN'],
+      brandId
+    } = req.body;
+
+    if (!productDescription) {
+      res.status(400).json({ error: 'productDescription is required to architect a campaign' });
+      return;
+    }
+
+    let brandName = 'OmniSocial';
+    if (brandId) {
+      const brand = await prisma.brand.findFirst({
+        where: { id: brandId, business: { tenantId: req.user?.tenantId! } }
+      });
+      if (brand?.name) brandName = brand.name;
+    }
+
+    const roadmap = await CampaignArchitectService.generateRoadmap({
+      productDescription,
+      businessType,
+      campaignGoal,
+      durationDays: Number(durationDays) as 7 | 14 | 30,
+      startDate,
+      platforms,
+      brandName
+    });
+
+    res.json({
+      success: true,
+      roadmap
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to generate campaign roadmap');
+  }
+});
+
+// 14. "Start From Zero" Campaign Architect: 1-Click Deploy to Calendar
+router.post('/deploy-campaign', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { brandId, campaignName, posts } = req.body;
+
+    if (!posts || !Array.isArray(posts) || posts.length === 0) {
+      res.status(400).json({ error: 'posts array is required to deploy campaign' });
+      return;
+    }
+
+    // Resolve brandId: if not provided or doesn't exist, find first active brand
+    let targetBrandId = brandId;
+    if (!targetBrandId) {
+      const firstBrand = await prisma.brand.findFirst({
+        where: { business: { tenantId: req.user?.tenantId! } }
+      });
+      targetBrandId = firstBrand?.id;
+    }
+
+    if (!targetBrandId) {
+      // Auto-create a default brand for this tenant if none exists
+      const business = await prisma.business.findFirst({
+        where: { tenantId: req.user?.tenantId! }
+      });
+      if (!business) {
+        res.status(400).json({ error: 'No business found for tenant' });
+        return;
+      }
+      const newBrand = await prisma.brand.create({
+        data: {
+          businessId: business.id,
+          name: 'My Brand',
+          slug: `brand-${Date.now()}`
+        }
+      });
+      targetBrandId = newBrand.id;
+    }
+
+    const result = await CampaignArchitectService.deployCampaignToCalendar({
+      tenantId: req.user?.tenantId!,
+      userId: req.user?.id!,
+      brandId: targetBrandId,
+      campaignName: campaignName || 'Start From Zero Campaign',
+      posts
+    });
+
+    res.json({
+      success: true,
+      result
+    });
+  } catch (err: any) {
+    console.error('[Deploy Campaign Error]:', err);
+    res.status(500).json({
+      error: 'DEPLOY_CAMPAIGN_FAILED',
+      message: err.message || 'Failed to deploy campaign into calendar'
+    });
+  }
+});
+
+// 15. "Start From Zero" Campaign: 1-Click Generate AI Product Photo or Reel Visual
+router.post('/generate-campaign-media', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const {
+      prompt,
+      mediaType = 'IMAGE',
+      productDescription,
+      businessType,
+      phase,
+      dayNumber
+    } = req.body;
+
+    if (!prompt) {
+      res.status(400).json({ error: 'prompt is required to generate media' });
+      return;
+    }
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+
+    const media = await CampaignArchitectService.generateCampaignMedia({
+      prompt,
+      mediaType,
+      productDescription,
+      businessType,
+      phase,
+      dayNumber: Number(dayNumber) || 1,
+      host,
+      protocol
+    });
+
+    res.json({
+      success: true,
+      media
+    });
+  } catch (err: any) {
+    console.error('[Generate Campaign Media Error]:', err);
+    res.status(500).json({
+      error: 'GENERATE_CAMPAIGN_MEDIA_FAILED',
+      message: err.message || 'Failed to generate campaign media'
+    });
+  }
+});
+
+// 16. Instant 1-Click Single Post or Reel Generator (Start From Zero for Interns)
+router.post('/instant-post', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const {
+      brandId,
+      productOrTopic,
+      postType = 'REEL',
+      preset = 'PROBLEM_SOLUTION',
+      targetPlatform = 'INSTAGRAM',
+      scheduledDate
+    } = req.body;
+
+    if (!productOrTopic) {
+      res.status(400).json({ error: 'productOrTopic is required to generate instant post' });
+      return;
+    }
+
+    let brandName = 'OmniSocial';
+    if (brandId) {
+      const brand = await prisma.brand.findFirst({
+        where: { id: brandId, business: { tenantId: req.user?.tenantId! } }
+      });
+      if (brand?.name) brandName = brand.name;
+    }
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+
+    const post = await CampaignArchitectService.generateInstantPost({
+      brandName,
+      productOrTopic,
+      postType,
+      preset,
+      targetPlatform,
+      scheduledDate,
+      host,
+      protocol
+    });
+
+    res.json({
+      success: true,
+      post
+    });
+  } catch (err: any) {
+    console.error('[Instant Post Error]:', err);
+    res.status(500).json({
+      error: 'INSTANT_POST_FAILED',
+      message: err.message || 'Failed to generate instant post'
+    });
   }
 });
 

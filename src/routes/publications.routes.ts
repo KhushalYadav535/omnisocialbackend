@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import axios from 'axios';
 import { prisma } from '../services/db.service';
 import { MetaService, MetaApiError } from '../services/meta.service';
 import { LinkedInService } from '../services/linkedin.service';
@@ -112,6 +113,39 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
           );
         } else {
           throw new Error(`Unsupported publishing platform: ${account.platform}`);
+        }
+
+        // Feature 1B: AI First-Comment Autopilot
+        if (content.firstComment && content.firstComment.trim() && result.postId) {
+          try {
+            if (account.platform === 'LINKEDIN') {
+              const authorUrn = account.pageCategory === 'COMPANY_PAGE'
+                ? `urn:li:organization:${account.platformAccountId}`
+                : `urn:li:person:${account.platformAccountId}`;
+              await axios.post(
+                `https://api.linkedin.com/v2/socialActions/${encodeURIComponent(result.postId)}/comments`,
+                {
+                  actor: authorUrn,
+                  message: { text: content.firstComment.trim() }
+                },
+                {
+                  headers: {
+                    'Authorization': `Bearer ${rawAccessToken}`,
+                    'Content-Type': 'application/json',
+                    'X-Restli-Protocol-Version': '2.0.0'
+                  }
+                }
+              );
+            } else if (account.platform === 'FACEBOOK' || account.platform === 'INSTAGRAM') {
+              await axios.post(
+                `https://graph.facebook.com/v26.0/${result.postId}/comments`,
+                { message: content.firstComment.trim() },
+                { params: { access_token: rawAccessToken } }
+              );
+            }
+          } catch (commentErr: any) {
+            console.warn('[First-Comment Autopilot Notice]:', commentErr.response?.data?.error?.message || commentErr.message);
+          }
         }
 
         const pub = await prisma.publication.create({

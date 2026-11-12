@@ -122,6 +122,8 @@ model Brand {
   contents       Content[]
   interactions   Interaction[]
   aiUsageLogs    AiUsageLog[]
+  clientShareTokens ClientShareToken[]
+  leadFunnels       LeadFunnel[]
   
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -261,6 +263,13 @@ model Content {
   targetPlatforms String           @default("[\"FACEBOOK\", \"INSTAGRAM\"]") // JSON
   format          String           @default("POST") // POST, REEL, STORY, CAROUSEL
   status          String           @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHING, PUBLISHED, FAILED
+  firstComment    String?          // Feature 1B: AI First-Comment Autopilot
+  viralityScore   Int?             // Feature 1C: AI Virality Score Meter (0-100)
+  isEvergreen     Boolean          @default(false) // Feature 4A: Evergreen Recycler
+  recycleIntervalDays Int          @default(60)    // Recycle interval in days
+  lastRecycledAt  DateTime?
+  clientApprovalStatus String       @default("PENDING") // Feature 3A: PENDING, APPROVED, REJECTED, CHANGES_REQUESTED
+  clientFeedback  String?
   createdByUserId String
   createdByUser   User             @relation(fields: [createdByUserId], references: [id])
   
@@ -427,6 +436,43 @@ model AiUsageLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+// -------------------------------------------------------------
+// Agency Client Review & Magic Links (Feature 3A)
+// -------------------------------------------------------------
+
+model ClientShareToken {
+  id         String    @id @default(uuid())
+  brandId    String
+  brand      Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  token      String    @unique
+  name       String    @default("Client Review Link")
+  canApprove Boolean   @default(true)
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// -------------------------------------------------------------
+// Comment-to-DM Lead Magnet Funnel (Feature 2A)
+// -------------------------------------------------------------
+
+model LeadFunnel {
+  id             String   @id @default(uuid())
+  brandId        String
+  brand          Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name           String
+  triggerKeyword String   // e.g. "AI", "GROWTH", "GUIDE"
+  matchType      String   @default("CONTAINS") // EXACT, CONTAINS
+  publicReply    String   // e.g. "Sent to your inbox! Check your DMs 🚀"
+  dmMessage      String   // e.g. "Hey {name}! Here is your download link: {link}"
+  assetUrl       String?
+  isActive       Boolean  @default(true)
+  triggersCount  Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 
 
 

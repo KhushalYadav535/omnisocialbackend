@@ -24,6 +24,8 @@ import webhookRoutes from './routes/webhooks.routes';
 import teamRoutes from './routes/team.routes';
 import monitoringRoutes from './routes/monitoring.routes';
 import legalRoutes from './routes/legal.routes';
+import clientReviewRoutes from './routes/clientReview.routes';
+import leadFunnelRoutes from './routes/leadFunnel.routes';
 import { LoggerService } from './services/logger.service';
 
 const app = express();
@@ -55,6 +57,12 @@ if (!fs.existsSync(uploadsDirectory)) {
   fs.mkdirSync(uploadsDirectory, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDirectory));
+
+// Also serve parent project uploads directory if running from backend subfolder
+const parentUploads = path.resolve(process.cwd(), '..', 'uploads');
+if (fs.existsSync(parentUploads)) {
+  app.use('/uploads', express.static(parentUploads));
+}
 
 // Root & Health Checks
 app.get('/', (_req, res) => {
@@ -103,6 +111,8 @@ app.use('/api/publications', publicationRoutes);
 app.use('/api/linkedin', linkedinRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/monitoring', monitoringRoutes);
+app.use('/api/client-review', clientReviewRoutes);
+app.use('/api/lead-funnels', leadFunnelRoutes);
 app.use('/api', businessRoutes);
 app.use('/', legalRoutes);
 
