@@ -10,15 +10,23 @@ const router = Router();
  */
 router.post('/generate-token', authenticateToken, requireTenant, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId, name = 'Client Review Portal' } = req.body;
+    let { brandId, name = 'Client Review Portal' } = req.body;
 
-    if (!brandId) {
-      res.status(400).json({ error: 'brandId is required' });
+    let targetBrandId = brandId;
+    if (!targetBrandId) {
+      const defaultBrand = await prisma.brand.findFirst({
+        where: { business: { tenantId: req.user?.tenantId! } }
+      });
+      if (defaultBrand) targetBrandId = defaultBrand.id;
+    }
+
+    if (!targetBrandId) {
+      res.status(400).json({ error: 'No brand found for your account. Please create a brand first.' });
       return;
     }
 
     const brand = await prisma.brand.findFirst({
-      where: { id: brandId, business: { tenantId: req.user?.tenantId! } }
+      where: { id: targetBrandId, business: { tenantId: req.user?.tenantId! } }
     });
 
     if (!brand) {
