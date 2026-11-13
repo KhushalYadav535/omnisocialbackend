@@ -207,7 +207,7 @@ router.patch('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthR
   try {
     const rawId = req.params.id;
     const publicationId = Array.isArray(rawId) ? rawId[0] : rawId;
-    const { title, caption, hashtags, isEvergreen, recycleIntervalDays, viralityScore } = req.body;
+    const { title, caption, hashtags, isEvergreen, recycleIntervalDays, viralityScore, mediaUrls } = req.body;
 
     const pub = await prisma.publication.findFirst({
       where: {
@@ -241,7 +241,8 @@ router.patch('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthR
         hashtags: hashtags !== undefined ? (typeof hashtags === 'string' ? hashtags : JSON.stringify(hashtags)) : pub.content.hashtags,
         isEvergreen: isEvergreen !== undefined ? Boolean(isEvergreen) : pub.content.isEvergreen,
         recycleIntervalDays: recycleIntervalDays !== undefined ? Number(recycleIntervalDays) : pub.content.recycleIntervalDays,
-        viralityScore: viralityScore !== undefined ? Number(viralityScore) : pub.content.viralityScore
+        viralityScore: viralityScore !== undefined ? Number(viralityScore) : pub.content.viralityScore,
+        mediaUrls: mediaUrls !== undefined ? (typeof mediaUrls === 'string' ? mediaUrls : JSON.stringify(mediaUrls)) : pub.content.mediaUrls
       }
     });
 
