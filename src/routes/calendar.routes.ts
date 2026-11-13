@@ -401,7 +401,7 @@ router.post('/evergreen/auto-fill-gaps', requirePermission('SCHEDULE_POSTS'), as
     const socialAccounts = await prisma.socialAccount.findMany({
       where: {
         brandId: targetBrandId,
-        status: 'CONNECTED'
+        isConnected: true
       }
     });
 
