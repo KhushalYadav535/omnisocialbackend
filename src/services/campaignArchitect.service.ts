@@ -15,6 +15,8 @@ export interface CampaignPostPlan {
   format: 'REEL' | 'CAROUSEL' | 'SINGLE_IMAGE' | 'TEXT_STORY';
   targetPlatform: string;
   hook: string;
+  hookVariations?: string[]; // 3 dynamic interchangeable hooks
+  activeHookIndex?: number;
   caption: string;
   hashtags: string[];
   photoUploadGuide: string; // Exact instructions on what photo/image to shoot or upload
@@ -39,6 +41,9 @@ export interface GenerateRoadmapParams {
   startDate?: string;
   platforms?: string[];
   brandName?: string;
+  targetAudience?: string;
+  tone?: 'URGENT_DIRECT' | 'STORYTELLING' | 'PROFESSIONAL' | 'GENZ_VIRAL';
+  language?: 'ENGLISH' | 'HINGLISH' | 'CASUAL_US';
 }
 
 export class CampaignArchitectService {
@@ -66,7 +71,10 @@ export class CampaignArchitectService {
       durationDays = 7,
       startDate = new Date(Date.now() + 86400000).toISOString(),
       platforms = ['INSTAGRAM', 'LINKEDIN'],
-      brandName = 'OmniSocial'
+      brandName = 'OmniSocial',
+      targetAudience,
+      tone = 'URGENT_DIRECT',
+      language = 'ENGLISH'
     } = params;
 
     const start = new Date(startDate);
@@ -74,6 +82,7 @@ export class CampaignArchitectService {
 
     // Attempt AI Generation via OpenRouter
     try {
+      const isHinglish = language === 'HINGLISH';
       const prompt = `You are a world-class Chief Marketing Officer (CMO) and copywriting genius who specializes in helping complete beginners launch wildly profitable social media marketing campaigns from absolute zero.
 
 Context:
@@ -81,6 +90,9 @@ Context:
 - Product / Offer Description: "${productDescription}"
 - Business Model: "${businessType}"
 - Campaign Objective: "${campaignGoal}" (SALES = Direct revenue, LEADS = Inquiries & appointments, AWARENESS = Viral reach)
+- Target Audience / Demographic: "${targetAudience || 'General Ideal Customer Profile'}"
+- Tone of Voice: "${tone}" (URGENT_DIRECT = High-conversion bold punchy, STORYTELLING = Empathetic story-driven, PROFESSIONAL = Corporate authority & metrics, GENZ_VIRAL = Ultra-relatable, trendy)
+- Language Style: "${language}" ${isHinglish ? '(IMPORTANT: Write in natural Hinglish - Hindi words written in English letters, the way Indian founders and creators speak, e.g. "Bhai agar aap bhi...", "Yeh 3 galtiyan mat karna", "Dekho sach yeh hai ki...")' : '(Write in clean, engaging modern English)'}
 - Duration: ${durationDays} days
 - Target Platforms: ${platforms.join(', ')}
 - Start Date: ${start.toISOString()}
@@ -102,14 +114,19 @@ Output MUST be a JSON object with this exact structure:
       "phaseLabel": "Phase 1: Hook & Pain Point",
       "phaseBadgeColor": "amber",
       "title": "Short catchy title",
-      "whyThisPostWorks": "1-2 sentences in simple English explaining to a beginner why this post is crucial on this day",
+      "whyThisPostWorks": "1-2 sentences explaining to a beginner why this post is crucial on this day",
       "format": "REEL",
       "targetPlatform": "${platforms[0] || 'INSTAGRAM'}",
       "hook": "Bold opening line",
+      "hookVariations": [
+        "Curiosity Hook: Bold opening line...",
+        "Statistical / Contrast Hook: 92% of people make this mistake...",
+        "Story Hook: How 1 simple tweak changed everything..."
+      ],
       "caption": "Full high-converting post caption with emojis and line breaks",
       "hashtags": ["#tag1", "#tag2", "#tag3"],
-      "photoUploadGuide": "Clear instruction telling the beginner exactly what photo to shoot on their phone or upload (e.g. flat-lay, review screenshot, hero product angle)",
-      "aiImagePrompt": "A detailed, high-resolution AI image generator prompt if the user does not have a real photo",
+      "photoUploadGuide": "Clear instruction telling the beginner exactly what photo to shoot on their phone or upload",
+      "aiImagePrompt": "A detailed, high-resolution AI image generator prompt",
       "bRollGuide": "Phone camera instruction: Exactly what 5-second video clip to record (no face needed)",
       "ctaType": "COMMENT_KEYWORD",
       "ctaKeyword": "KEYWORD",
@@ -117,7 +134,7 @@ Output MUST be a JSON object with this exact structure:
     }
   ]
 }
-Return ONLY valid raw JSON without markdown code fences or backticks. All text must be in clean English.`;
+Return ONLY valid raw JSON without markdown code fences or backticks.`;
 
       const response = await OpenRouterService.createChatCompletion(
         [{ role: 'user', content: prompt }],
@@ -130,21 +147,42 @@ Return ONLY valid raw JSON without markdown code fences or backticks. All text m
       const parsed = JSON.parse(response.content.trim().replace(/^```json/i, '').replace(/```$/i, '').trim());
 
       if (parsed && Array.isArray(parsed.posts) && parsed.posts.length > 0) {
-        // Adjust dates to match sequential cadence
+        // Adjust dates to match sequential cadence with smart optimal slot allocation
         const postsWithDates: CampaignPostPlan[] = parsed.posts.map((post: any, idx: number) => {
           const postDate = new Date(start.getTime() + idx * (durationDays / parsed.posts.length) * 86400000);
-          postDate.setHours(10, 0, 0, 0); // 10:00 AM optimal morning slot
+          
+          // Smart dynamic posting slots based on format
           const isReel = post.format === 'REEL';
+          if (isReel) {
+            postDate.setHours(19, 30, 0, 0); // 7:30 PM Peak virality window
+          } else if (post.format === 'CAROUSEL') {
+            postDate.setHours(12, 30, 0, 0); // 12:30 PM Lunchtime reading
+          } else {
+            postDate.setHours(17, 0, 0, 0); // 5:00 PM Evening engagement
+          }
+
           const ar = isReel ? '9:16' : '1:1';
+          const primaryHook = post.hook || `Day ${idx + 1}: Let's talk about ${productDescription.slice(0, 30)}...`;
+          const hookVars = Array.isArray(post.hookVariations) && post.hookVariations.length >= 2
+            ? post.hookVariations
+            : [
+                `Curiosity: ${primaryHook}`,
+                `Statistical: Why 90% of people struggle with ${productDescription.slice(0, 25)}...`,
+                `Story: We tested this for 30 days and here is what happened...`
+              ];
+
           return {
             ...post,
             dayNumber: idx + 1,
             scheduledDate: postDate.toISOString(),
             phaseBadgeColor: post.phaseBadgeColor || CampaignArchitectService.getColorForPhase(post.phase),
             aspectRatio: ar,
+            hook: primaryHook,
+            hookVariations: hookVars,
+            activeHookIndex: 0,
             midjourneyPrompt: post.midjourneyPrompt || `${post.aiImagePrompt || post.title}, commercial photography, cinematic lighting, 8k resolution, shot on Hasselblad --ar ${ar} --v 6.1 --style raw`,
             videoPrompt: post.videoPrompt || (isReel ? `Slow cinematic push-in toward ${post.title.toLowerCase()}. Soft volumetric studio lighting, smooth micro-movements, high-end 4k commercial motion, 9:16 vertical video.` : `Slow orbital camera pan around subject, subtle lighting shift, clean depth of field.`),
-            voiceoverScript: post.voiceoverScript || `[0:00 - 0:03 HOOK]: ${post.hook}\n[0:03 - 0:10 VALUE]: ${post.caption ? post.caption.slice(0, 110).replace(/\n/g, ' ') : 'Here is the step-by-step breakdown.'}...\n[0:10 - 0:15 CTA]: Comment below to get the direct link in your DMs!`,
+            voiceoverScript: post.voiceoverScript || `[0:00 - 0:03 HOOK]: ${primaryHook}\n[0:03 - 0:10 VALUE]: ${post.caption ? post.caption.slice(0, 110).replace(/\n/g, ' ') : 'Here is the step-by-step breakdown.'}...\n[0:10 - 0:15 CTA]: Comment ${post.ctaKeyword || 'YES'} below!`,
             canvaDesignBrief: post.canvaDesignBrief || `Cover Headline: "${post.title.slice(0, 35)}" | Style: Clean modern minimalism | Primary Colors: #4F46E5 (Indigo), #0F172A (Slate), #F59E0B (Amber) | Safe Zone: Center-aligned typography.`
           };
         });
@@ -444,9 +482,20 @@ Return ONLY valid raw JSON without markdown code fences or backticks. All text m
 
     const posts: CampaignPostPlan[] = steps.map((s, idx) => {
       const postDate = new Date(start.getTime() + idx * (durationDays / steps.length) * 86400000);
-      postDate.setHours(10 + (idx % 3) * 2, 0, 0, 0); // 10 AM, 12 PM, 2 PM optimal slots
       const isReel = s.format === 'REEL';
+      if (isReel) {
+        postDate.setHours(19, 30, 0, 0); // 7:30 PM Peak virality window
+      } else if (s.format === 'CAROUSEL') {
+        postDate.setHours(12, 30, 0, 0); // 12:30 PM Lunchtime reading
+      } else {
+        postDate.setHours(17, 0, 0, 0); // 5:00 PM Evening engagement
+      }
       const ar = isReel ? '9:16' : '1:1';
+      const hookVars = [
+        `Curiosity: ${s.hook}`,
+        `Statistical: Why 92% of people struggle with ${productDescription.slice(0, 25)} in 2026...`,
+        `Story: Here is the exact system that changed everything for our clients...`
+      ];
 
       return {
         dayNumber: idx + 1,
@@ -459,6 +508,8 @@ Return ONLY valid raw JSON without markdown code fences or backticks. All text m
         format: s.format,
         targetPlatform: s.platform,
         hook: s.hook,
+        hookVariations: hookVars,
+        activeHookIndex: 0,
         caption: s.captionGen(productDescription, brandName),
         hashtags: [`#${brandName.replace(/\s+/g, '')}`, '#GrowthMarketing', '#LaunchDay', '#BusinessStrategy'],
         photoUploadGuide: s.photoUploadGuide,
@@ -509,6 +560,142 @@ Return ONLY valid raw JSON without markdown code fences or backticks. All text m
       default:
         return 'indigo';
     }
+  }
+
+  /**
+   * Dynamically regenerates or improves a single post in the campaign roadmap
+   */
+  static async regenerateSinglePost(params: {
+    post: CampaignPostPlan;
+    instruction?: string;
+    tone?: string;
+    language?: string;
+    brandName?: string;
+    productDescription?: string;
+  }): Promise<CampaignPostPlan> {
+    const {
+      post,
+      instruction = 'Make it fresher, punchier and higher converting',
+      tone = 'URGENT_DIRECT',
+      language = 'ENGLISH',
+      brandName = 'OmniSocial',
+      productDescription = ''
+    } = params;
+
+    const isHinglish = language === 'HINGLISH';
+    const isReel = post.format === 'REEL';
+    const ar = isReel ? '9:16' : '1:1';
+
+    try {
+      const prompt = `You are a world-class Chief Marketing Officer (CMO).
+A user wants to dynamically improve and regenerate a single social media campaign post.
+
+Current Post Context:
+- Day: ${post.dayNumber}
+- Phase: "${post.phase}" (${post.phaseLabel})
+- Format: "${post.format}"
+- Target Platform: "${post.targetPlatform}"
+- Current Title: "${post.title}"
+- Current Hook: "${post.hook}"
+- Current Caption: "${post.caption}"
+- Product Description: "${productDescription}"
+- Brand Name: "${brandName}"
+- User Request / Direction: "${instruction}"
+- Tone of Voice: "${tone}"
+- Language: "${language}" ${isHinglish ? '(Write naturally in Hinglish - Hindi words written in English alphabet, conversational Indian creator style, e.g. "Bhai agar aap bhi...", "Dekho sach yeh hai ki...")' : '(Write in clean, engaging modern English)'}
+
+Return ONLY a valid raw JSON object:
+{
+  "title": "Fresh catchy title",
+  "whyThisPostWorks": "1-2 sentences on why this angle converts",
+  "hook": "Primary punchy hook",
+  "hookVariations": [
+    "Curiosity Hook: ...",
+    "Statistical / Contrast Hook: ...",
+    "Story Hook: ..."
+  ],
+  "caption": "Full high-converting caption with emojis, storytelling, line breaks",
+  "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4"],
+  "photoUploadGuide": "Specific photo shooting instructions for smartphone",
+  "aiImagePrompt": "Detailed photorealistic AI prompt",
+  "videoPrompt": "Cinematic camera movement and motion prompt",
+  "voiceoverScript": "[0:00-0:03]: Hook... [0:03-0:10]: Value... [0:10-0:15]: CTA...",
+  "canvaDesignBrief": "Headline, fonts, colors, layout advice",
+  "bRollGuide": "5-second phone video instruction",
+  "ctaKeyword": "KEYWORD",
+  "firstComment": "First comment text"
+}`;
+
+      const response = await OpenRouterService.createChatCompletion(
+        [{ role: 'user', content: prompt }],
+        { responseFormatJson: true, temperature: 0.8 }
+      );
+
+      const parsed = JSON.parse(response.content.trim().replace(/^```json/i, '').replace(/```$/i, '').trim());
+      if (parsed && parsed.title && parsed.caption) {
+        return {
+          ...post,
+          title: parsed.title,
+          whyThisPostWorks: parsed.whyThisPostWorks || post.whyThisPostWorks,
+          hook: parsed.hook || post.hook,
+          hookVariations: Array.isArray(parsed.hookVariations) && parsed.hookVariations.length >= 2
+            ? parsed.hookVariations
+            : [
+                `Curiosity: ${parsed.hook || post.hook}`,
+                `Statistical: Why 90% of people struggle with ${brandName}...`,
+                `Story: How this simple shift solved the entire problem...`
+              ],
+          activeHookIndex: 0,
+          caption: parsed.caption,
+          hashtags: parsed.hashtags || post.hashtags,
+          photoUploadGuide: parsed.photoUploadGuide || post.photoUploadGuide,
+          aiImagePrompt: parsed.aiImagePrompt || post.aiImagePrompt,
+          midjourneyPrompt: `${parsed.aiImagePrompt || parsed.title}, commercial photography, cinematic lighting, 8k resolution, shot on Hasselblad --ar ${ar} --v 6.1 --style raw`,
+          videoPrompt: parsed.videoPrompt || (isReel ? `Slow cinematic push-in toward ${parsed.title.toLowerCase()}. Soft volumetric studio lighting, smooth micro-movements, high-end 4k commercial motion, 9:16 vertical video.` : `Slow orbital camera pan around subject, subtle lighting shift, clean depth of field.`),
+          voiceoverScript: parsed.voiceoverScript || `[0:00 - 0:03 HOOK]: ${parsed.hook}\n[0:03 - 0:10 VALUE]: ${parsed.caption.slice(0, 110)}...\n[0:10 - 0:15 CTA]: Comment ${parsed.ctaKeyword || 'YES'} below!`,
+          canvaDesignBrief: parsed.canvaDesignBrief || `Cover Headline: "${parsed.title.slice(0, 35)}" | Style: Clean modern minimalism | Primary Colors: #4F46E5, #0F172A, #F59E0B | Safe Zone: Center-aligned typography.`,
+          bRollGuide: parsed.bRollGuide || post.bRollGuide,
+          ctaKeyword: parsed.ctaKeyword || post.ctaKeyword || 'YES',
+          firstComment: parsed.firstComment || post.firstComment
+        };
+      }
+    } catch (e: any) {
+      console.warn('[CampaignArchitect] Single post regeneration fallback:', e.message);
+    }
+
+    // High-yield smart variation fallback
+    const freshHook = isHinglish
+      ? `Bhai agar aap bhi ${productDescription.slice(0, 35)} se pareshan ho, toh yeh 1 rule yaad rakhna!`
+      : `Stop making this #1 mistake with ${productDescription.slice(0, 35)} in 2026:`;
+
+    const freshCaption = isHinglish
+      ? `Sach batao — kitni baar aisa hua hai ki aapne hard work kiya par results zero aaye?\n\n` +
+        `Yeh issue 90% logo ke sath hota hai kyunki hum puraane tareeqe use karte hain.\n\n` +
+        `💡 Smart Solution: ${brandName} ko implement karo aur sirf 3 din me difference dekho.\n\n` +
+        `👇 Agar aapko bhi step-by-step blueprint chahiye, toh comment karo "BLUEPRINT" aur hum direct DM me guide bhej denge!`
+      : `Most people focus on the wrong 80% when dealing with ${productDescription.slice(0, 40)}.\n\n` +
+        `Here is the exact high-leverage shift we made:\n` +
+        `1. Eliminate low-ROI manual busywork.\n` +
+        `2. Automate the friction with ${brandName}.\n` +
+        `3. Compound your weekly results on autopilot.\n\n` +
+        `Double tap if you want the complete breakdown. Comment "GROWTH" below to receive the free audit template!`;
+
+    return {
+      ...post,
+      title: `${post.title} (Fresh Dynamic Angle)`,
+      hook: freshHook,
+      hookVariations: [
+        `Curiosity: ${freshHook}`,
+        `Question: Ever wondered why most people struggle with this?`,
+        `Direct Proof: Here is the exact system that changed everything.`
+      ],
+      activeHookIndex: 0,
+      caption: freshCaption,
+      ctaKeyword: isHinglish ? 'BLUEPRINT' : 'GROWTH',
+      firstComment: isHinglish
+        ? `🔥 Free guide sirf pehle 50 logo ke liye hai. "BLUEPRINT" comment karo aur abhi link lo!`
+        : `🔥 The complete template is available in bio or comment "GROWTH" for immediate DM delivery.`
+    };
   }
 
   /**

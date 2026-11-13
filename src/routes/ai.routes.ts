@@ -521,7 +521,10 @@ router.post('/campaign-roadmap', async (req: AuthRequest, res: Response): Promis
       durationDays = 7,
       startDate,
       platforms = ['INSTAGRAM', 'LINKEDIN'],
-      brandId
+      brandId,
+      targetAudience,
+      tone = 'URGENT_DIRECT',
+      language = 'ENGLISH'
     } = req.body;
 
     if (!productDescription) {
@@ -544,7 +547,10 @@ router.post('/campaign-roadmap', async (req: AuthRequest, res: Response): Promis
       durationDays: Number(durationDays) as 7 | 14 | 30,
       startDate,
       platforms,
-      brandName
+      brandName,
+      targetAudience,
+      tone,
+      language
     });
 
     res.json({
@@ -553,6 +559,33 @@ router.post('/campaign-roadmap', async (req: AuthRequest, res: Response): Promis
     });
   } catch (err: any) {
     handleAiError(err, res, 'Failed to generate campaign roadmap');
+  }
+});
+
+// 13.1 Campaign Architect: Regenerate Single Post Dynamically
+router.post('/campaign-roadmap/regenerate-post', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { post, instruction, tone, language, brandName, productDescription } = req.body;
+    if (!post) {
+      res.status(400).json({ error: 'post object is required' });
+      return;
+    }
+
+    const updatedPost = await CampaignArchitectService.regenerateSinglePost({
+      post,
+      instruction,
+      tone,
+      language,
+      brandName,
+      productDescription
+    });
+
+    res.json({
+      success: true,
+      post: updatedPost
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to dynamically regenerate post');
   }
 });
 
