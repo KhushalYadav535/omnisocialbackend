@@ -493,6 +493,24 @@ router.post('/virality-score', async (req: AuthRequest, res: Response): Promise<
   }
 });
 
+// 12B. Feature 1C: 1-Click AI Fix & Boost (Elevates post to 90+ Score)
+router.post('/boost-post', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { caption, platform = 'INSTAGRAM' } = req.body;
+    if (!caption || !caption.trim()) {
+      res.status(400).json({ error: 'Caption is required to boost' });
+      return;
+    }
+    const result = await ViralityService.boostPost(caption, platform);
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err: any) {
+    handleAiError(err, res, 'Failed to boost post with AI');
+  }
+});
+
 // 13. "Start From Zero" Campaign Architect: Generate Full Marketing Roadmap
 router.post('/campaign-roadmap', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
