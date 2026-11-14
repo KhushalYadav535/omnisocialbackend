@@ -39,7 +39,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
             tenantId: req.user?.tenantId!
           }
         },
-        ...(brandId && typeof brandId === 'string' ? { brandId } : {})
+        ...(brandId && typeof brandId === 'string' && brandId !== 'ALL' && brandId !== '' ? { brandId } : {})
       },
       include: {
         brand: {
