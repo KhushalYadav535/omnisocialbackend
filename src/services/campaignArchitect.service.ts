@@ -103,6 +103,9 @@ Core Frameworks to strictly follow:
 3. Alex Hormozi's Value Equation: Highlight dream outcome, kill perceived effort, and reverse risk.
 4. B-Roll & Visual Director: Non-technical users need simple 5-second phone video briefs (e.g. holding product, screen recording, hands typing).
 
+CRITICAL REQUIREMENT:
+The "posts" array MUST contain exactly ${durationDays} items, one for each day from dayNumber 1 to dayNumber ${durationDays}. You MUST provide complete content for all ${durationDays} days. Do NOT output only 1 post or omit any days!
+
 Output MUST be a JSON object with this exact structure:
 {
   "campaignName": "string",
@@ -147,9 +150,25 @@ Return ONLY valid raw JSON without markdown code fences or backticks.`;
       const parsed = JSON.parse(response.content.trim().replace(/^```json/i, '').replace(/```$/i, '').trim());
 
       if (parsed && Array.isArray(parsed.posts) && parsed.posts.length > 0) {
+        // If LLM returned fewer posts than requested durationDays, supplement from heuristic roadmap
+        let rawPosts = parsed.posts;
+        if (rawPosts.length < durationDays) {
+          const fallbackRoadmap = CampaignArchitectService.generateHeuristicRoadmap({
+            productDescription,
+            businessType,
+            campaignGoal,
+            durationDays,
+            startDate: start.toISOString(),
+            platforms,
+            brandName
+          });
+          const extraPosts = fallbackRoadmap.posts.slice(rawPosts.length);
+          rawPosts = [...rawPosts, ...extraPosts];
+        }
+
         // Adjust dates to match sequential cadence with smart optimal slot allocation
-        const postsWithDates: CampaignPostPlan[] = parsed.posts.map((post: any, idx: number) => {
-          const postDate = new Date(start.getTime() + idx * (durationDays / parsed.posts.length) * 86400000);
+        const postsWithDates: CampaignPostPlan[] = rawPosts.map((post: any, idx: number) => {
+          const postDate = new Date(start.getTime() + idx * 86400000);
           
           // Smart dynamic posting slots based on format
           const isReel = post.format === 'REEL';
