@@ -116,13 +116,23 @@ router.post('/:id/approve-and-send', async (req: AuthRequest, res: Response): Pr
           : socialAccount.accessToken;
 
         if (reply.interaction.type === 'DIRECT_MESSAGE') {
-          const fbRes = await MetaService.sendFacebookMessage(
-            socialAccount.platformAccountId,
-            rawToken,
-            reply.interaction.authorId || '',
-            finalContent
-          );
-          platformReplyId = fbRes.messageId;
+          if (reply.interaction.platform === 'INSTAGRAM') {
+            const igRes = await MetaService.sendInstagramMessage(
+              socialAccount.platformAccountId,
+              rawToken,
+              reply.interaction.authorId || '',
+              finalContent
+            );
+            platformReplyId = igRes.messageId;
+          } else {
+            const fbRes = await MetaService.sendFacebookMessage(
+              socialAccount.platformAccountId,
+              rawToken,
+              reply.interaction.authorId || '',
+              finalContent
+            );
+            platformReplyId = fbRes.messageId;
+          }
         } else if (reply.interaction.platform === 'FACEBOOK') {
           const fbRes = await MetaService.replyToFacebookComment(
             reply.interaction.platformInteractionId,

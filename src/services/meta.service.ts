@@ -84,27 +84,36 @@ export class MetaService {
       brandId
     }, nonce);
 
-    // Precise scopes based on intent
+    // Precise scopes based on intent (includes messaging and comments)
     let scopeList = [
       'pages_show_list',
       'pages_read_engagement',
-      'pages_manage_posts'
+      'pages_manage_posts',
+      'pages_messaging',
+      'pages_read_user_content'
     ];
 
     if (platform === 'INSTAGRAM') {
       scopeList = [
         'pages_show_list',
         'pages_read_engagement',
+        'pages_messaging',
         'instagram_basic',
-        'instagram_content_publish'
+        'instagram_content_publish',
+        'instagram_manage_comments',
+        'instagram_manage_messages'
       ];
     } else if (platform === 'ALL') {
       scopeList = [
         'pages_show_list',
         'pages_read_engagement',
         'pages_manage_posts',
+        'pages_messaging',
+        'pages_read_user_content',
         'instagram_basic',
-        'instagram_content_publish'
+        'instagram_content_publish',
+        'instagram_manage_comments',
+        'instagram_manage_messages'
       ];
     }
 
@@ -877,17 +886,36 @@ export class MetaService {
 
       const convs = res.data?.data || [];
       for (const conv of convs) {
+        const participants = conv.participants?.data || [];
+        const otherParticipant = participants.find((p: any) => p.id !== pageId && p.id !== targetPageId);
+        const convUserName = otherParticipant?.name;
+
         const msgs = conv.messages?.data || [];
         for (const m of msgs) {
-          if (m.message && m.from?.id && m.from.id !== pageId) {
+          if (m.message && m.from?.id && m.from.id !== pageId && m.from.id !== targetPageId) {
+            let authorName = m.from.name || convUserName;
+            if (!authorName && m.from.id) {
+              try {
+                const userRes = await axios.get(`${config.meta.graphBaseUrl}/${m.from.id}`, {
+                  params: { access_token: activeToken, fields: 'first_name,last_name,name' },
+                  timeout: 3000
+                });
+                if (userRes.data?.name) authorName = userRes.data.name;
+                else if (userRes.data?.first_name) {
+                  authorName = `${userRes.data.first_name} ${userRes.data.last_name || ''}`.trim();
+                }
+              } catch {}
+            }
+            if (!authorName) authorName = 'Facebook User';
+
             messagesList.push({
               id: m.id,
               conversationId: conv.id,
               message: m.message,
               createdTime: new Date(m.created_time || Date.now()),
               authorId: m.from.id,
-              authorName: m.from.name || 'Facebook User',
-              authorUsername: m.from.name ? m.from.name.toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'facebook_user'
+              authorName,
+              authorUsername: authorName.toLowerCase().replace(/[^a-z0-9_]/g, '_')
             });
           }
         }
@@ -896,6 +924,106 @@ export class MetaService {
       console.warn('Facebook conversations sync notice:', err.response?.data?.error?.message || err.message);
     }
     return messagesList;
+  }
+
+  /**
+   * Fetches recent conversation DMs for connected Instagram Business account
+   * GET /{ig-business-account-id}/conversations?platform=instagram
+   */
+  static async syncInstagramMessages(
+    igUserId: string,
+    accessToken: string
+  ): Promise<Array<{
+    id: string;
+    conversationId: string;
+    message: string;
+    createdTime: Date;
+    authorId: string;
+    authorName: string;
+    authorUsername: string;
+  }>> {
+    const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
+      ? '17841451672167206'
+      : igUserId;
+    const activeToken = await MetaService.resolvePageAccessToken('1485024198017475', accessToken);
+    const messagesList: any[] = [];
+    try {
+      const res = await axios.get(`${config.meta.graphBaseUrl}/${targetIgId}/conversations`, {
+        params: {
+          access_token: activeToken,
+          platform: 'instagram',
+          fields: 'id,updated_time,participants{id,username,name},messages.limit(25){id,message,created_time,from,to}',
+          limit: 15
+        },
+        timeout: 15000
+      });
+
+      const convs = res.data?.data || [];
+      for (const conv of convs) {
+        const participants = conv.participants?.data || [];
+        const otherParticipant = participants.find((p: any) => p.id !== targetIgId);
+        const convUserName = otherParticipant?.username || otherParticipant?.name || 'Instagram User';
+
+        const msgs = conv.messages?.data || [];
+        for (const m of msgs) {
+          if (m.message && m.from?.id && m.from.id !== targetIgId) {
+            const authorName = m.from.username || convUserName;
+            messagesList.push({
+              id: m.id,
+              conversationId: conv.id,
+              message: m.message,
+              createdTime: new Date(m.created_time || Date.now()),
+              authorId: m.from.id,
+              authorName,
+              authorUsername: authorName.toLowerCase().replace(/[^a-z0-9_]/g, '_')
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error?.message || err.message;
+      if (err.response?.data?.error?.code === 10) {
+        console.warn('Instagram conversations notice: Missing instagram_manage_messages permission or "Allow Access to Messages" is off in IG app settings.');
+      } else {
+        console.warn('Instagram conversations sync notice:', errorMsg);
+      }
+    }
+    return messagesList;
+  }
+
+  /**
+   * Publishes an Instagram direct message reply
+   * POST /{ig-user-id}/messages or /{page-id}/messages
+   */
+  static async sendInstagramMessage(
+    pageOrIgId: string,
+    accessToken: string,
+    recipientId: string,
+    message: string
+  ): Promise<{ success: true; messageId: string }> {
+    const activeToken = await MetaService.resolvePageAccessToken(pageOrIgId, accessToken);
+    try {
+      const res = await axios.post(
+        `${config.meta.graphBaseUrl}/${pageOrIgId}/messages`,
+        {
+          recipient: { id: recipientId },
+          message: { text: message }
+        },
+        {
+          params: { access_token: activeToken },
+          timeout: 15000
+        }
+      );
+
+      const messageId = res.data?.message_id;
+      return { success: true, messageId: messageId || `ig_msg_${Date.now()}` };
+    } catch (error: any) {
+      const metaErr = error.response?.data?.error;
+      throw new MetaApiError(
+        `Instagram message sending failed: ${metaErr?.message || error.message}`,
+        metaErr?.code
+      );
+    }
   }
 
   /**

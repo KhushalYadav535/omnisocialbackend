@@ -68,6 +68,7 @@ router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
         fetchedMessages = await MetaService.syncFacebookPageMessages(acc.platformAccountId, rawToken);
       } else if (acc.platform === 'INSTAGRAM') {
         fetchedComments = await MetaService.syncInstagramComments(acc.platformAccountId, rawToken);
+        fetchedMessages = await MetaService.syncInstagramMessages(acc.platformAccountId, rawToken);
       }
 
       totalFound += fetchedComments.length + fetchedMessages.length;
@@ -274,8 +275,25 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 50;
     const skip = (page - 1) * limit;
 
+    // Scoped metrics by brand if brandId filter active
+    const baseScope: any = {
+      brand: { business: { tenantId: req.user?.tenantId! } }
+    };
+    if (brandId && typeof brandId === 'string') {
+      baseScope.brandId = brandId;
+    }
+
     // Execute paginated query and total count at database level
-    const [total, interactions, unreadCount, needsResponseCount, commentsCount, dmsCount] = await Promise.all([
+    const [
+      total,
+      interactions,
+      unreadCount,
+      needsResponseCount,
+      totalCommentsCount,
+      totalDmsCount,
+      unreadCommentsCount,
+      unreadDmsCount
+    ] = await Promise.all([
       prisma.interaction.count({ where: whereClause }),
       prisma.interaction.findMany({
         where: whereClause,
@@ -303,26 +321,40 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       }),
       prisma.interaction.count({
         where: {
-          brand: { business: { tenantId: req.user?.tenantId! } },
+          ...baseScope,
           isRead: false
         }
       }),
       prisma.interaction.count({
         where: {
-          brand: { business: { tenantId: req.user?.tenantId! } },
+          ...baseScope,
           replyStatus: { in: ['NEEDS_RESPONSE', 'DRAFT_READY'] }
         }
       }),
       prisma.interaction.count({
         where: {
-          brand: { business: { tenantId: req.user?.tenantId! } },
+          ...baseScope,
           type: 'COMMENT'
         }
       }),
       prisma.interaction.count({
         where: {
-          brand: { business: { tenantId: req.user?.tenantId! } },
+          ...baseScope,
           type: 'DIRECT_MESSAGE'
+        }
+      }),
+      prisma.interaction.count({
+        where: {
+          ...baseScope,
+          type: 'COMMENT',
+          isRead: false
+        }
+      }),
+      prisma.interaction.count({
+        where: {
+          ...baseScope,
+          type: 'DIRECT_MESSAGE',
+          isRead: false
         }
       })
     ]);
@@ -367,8 +399,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       totalPages,
       unreadCount,
       needsResponseCount,
-      commentsCount,
-      dmsCount
+      commentsCount: totalCommentsCount,
+      dmsCount: totalDmsCount,
+      totalCommentsCount,
+      totalDmsCount,
+      unreadCommentsCount,
+      unreadDmsCount
     });
   } catch (err: any) {
     console.error('List inbox interactions error:', err);
@@ -426,6 +462,51 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       }).catch(err => console.error('Failed to update isRead on view:', err));
     }
 
+    // Fetch chronological conversation/post thread messages
+    let threadMessages: any[] = [];
+    try {
+      if (interaction.type === 'DIRECT_MESSAGE') {
+        const threadWhere: any = {
+          brandId: interaction.brandId,
+          type: 'DIRECT_MESSAGE'
+        };
+        if (interaction.parentPlatformId) {
+          threadWhere.parentPlatformId = interaction.parentPlatformId;
+        } else if (interaction.authorId) {
+          threadWhere.authorId = interaction.authorId;
+          threadWhere.socialAccountId = interaction.socialAccountId;
+        }
+
+        threadMessages = await prisma.interaction.findMany({
+          where: threadWhere,
+          include: {
+            replies: { orderBy: { createdAt: 'asc' } },
+            classifications: { take: 1, orderBy: { createdAt: 'desc' } }
+          },
+          orderBy: { platformCreatedAt: 'asc' }
+        });
+      } else if (interaction.type === 'COMMENT' && interaction.parentPlatformId) {
+        threadMessages = await prisma.interaction.findMany({
+          where: {
+            brandId: interaction.brandId,
+            type: 'COMMENT',
+            parentPlatformId: interaction.parentPlatformId
+          },
+          include: {
+            replies: { orderBy: { createdAt: 'asc' } },
+            classifications: { take: 1, orderBy: { createdAt: 'desc' } }
+          },
+          orderBy: { platformCreatedAt: 'asc' }
+        });
+      }
+    } catch (threadErr) {
+      console.warn('Thread fetch notice:', threadErr);
+    }
+
+    if (threadMessages.length === 0) {
+      threadMessages = [interaction];
+    }
+
     res.json({
       interaction: {
         id: interaction.id,
@@ -455,7 +536,8 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         classification: interaction.classifications[0] || null,
         replies: interaction.replies,
         assignedUser: interaction.assignedUser
-      }
+      },
+      thread: threadMessages
     });
   } catch (err: any) {
     console.error('Get interaction detail error:', err);

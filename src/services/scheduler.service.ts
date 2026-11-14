@@ -344,6 +344,7 @@ export class SchedulerService {
           messages = await MetaService.syncFacebookPageMessages(acc.platformAccountId, rawToken);
         } else if (acc.platform === 'INSTAGRAM') {
           comments = await MetaService.syncInstagramComments(acc.platformAccountId, rawToken);
+          messages = await MetaService.syncInstagramMessages(acc.platformAccountId, rawToken);
         }
 
         for (const item of comments) {
