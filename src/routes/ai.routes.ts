@@ -280,7 +280,10 @@ router.get('/video-status/:jobId', async (req: AuthRequest, res: Response): Prom
       const filePath = path.join(uploadsDir, filename);
 
       const host = req.get('host') || 'localhost:5000';
-      const protocol = req.protocol || 'http';
+      let protocol = req.protocol || 'http';
+      if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+        protocol = 'https';
+      }
       const localUrl = `${protocol}://${host}/uploads/${filename}`;
 
       // Check if file already downloaded
@@ -336,7 +339,10 @@ router.post('/generate-image', async (req: AuthRequest, res: Response): Promise<
     }
 
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
 
     let imageUrl: string;
 
@@ -396,7 +402,10 @@ router.post('/generate-carousel', async (req: AuthRequest, res: Response): Promi
 
     // 2. Render High-Resolution Square PDF Document (LinkedIn Carousel format)
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
     const pdfResult = await CarouselService.renderCarouselPdf(
       carouselContent,
       brandName,
@@ -666,7 +675,10 @@ router.post('/generate-campaign-media', async (req: AuthRequest, res: Response):
     }
 
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
 
     const media = await CampaignArchitectService.generateCampaignMedia({
       prompt,
@@ -718,7 +730,10 @@ router.post('/instant-post', async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
 
     const post = await CampaignArchitectService.generateInstantPost({
       brandName,

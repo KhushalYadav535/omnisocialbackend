@@ -51,7 +51,10 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
     }
 
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
     const relativeUrl = `/uploads/${req.file.filename}`;
     const fullUrl = `${protocol}://${host}${relativeUrl}`;
     const isVideo = req.file.mimetype.startsWith('video/') || /\.(mp4|mov|webm|m4v|avi)$/i.test(req.file.filename);

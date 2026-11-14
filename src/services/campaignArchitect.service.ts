@@ -749,15 +749,90 @@ Return ONLY a valid raw JSON object:
       });
     }
 
-    // 3. Batch create Content and Publication records in transaction
-    const createdPublications = await prisma.$transaction(async tx => {
-      const createdPubs: any[] = [];
+    // 3. Batch create Content and Publication records with resilient execution
+    // Set 120s timeout and 20s maxWait to prevent "Transaction not found" errors on Render remote databases.
+    let createdPublications: any[] = [];
+    try {
+      createdPublications = await prisma.$transaction(async tx => {
+        const createdPubs: any[] = [];
 
+        for (const p of posts) {
+          // Create Content post with resilience
+          let content;
+          try {
+            content = await tx.content.create({
+              data: {
+                brandId: brand.id,
+                title: `[${p.phaseLabel}] ${p.title}`,
+                caption: p.caption,
+                hashtags: JSON.stringify(p.hashtags || []),
+                mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
+                targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+                format: p.format || 'POST',
+                status: 'SCHEDULED',
+                firstComment: p.firstComment || null,
+                viralityScore: 88 + Math.floor(Math.random() * 9),
+                createdByUserId: userId
+              }
+            });
+          } catch (createErr: any) {
+            if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
+              content = await tx.content.create({
+                data: {
+                  brandId: brand.id,
+                  title: `[${p.phaseLabel}] ${p.title}`,
+                  caption: p.caption,
+                  hashtags: JSON.stringify(p.hashtags || []),
+                  mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
+                  targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+                  format: p.format || 'POST',
+                  status: 'SCHEDULED',
+                  createdByUserId: userId
+                }
+              });
+            } else {
+              throw createErr;
+            }
+          }
+
+          // Create ContentVersion
+          await tx.contentVersion.create({
+            data: {
+              contentId: content.id,
+              versionNumber: 1,
+              caption: content.caption,
+              hashtags: content.hashtags,
+              editedByUserId: userId,
+              changeSummary: `Campaign Architect Generated: ${p.phaseLabel}`
+            }
+          });
+
+          // Create Publication scheduled for the exact date
+          const pub = await tx.publication.create({
+            data: {
+              contentId: content.id,
+              socialAccountId: activeAccount.id,
+              scheduledFor: new Date(p.scheduledDate),
+              status: 'QUEUED',
+              idempotencyKey: `camp_${content.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+            }
+          });
+
+          createdPubs.push(pub);
+        }
+
+        return createdPubs;
+      }, {
+        maxWait: 20000,
+        timeout: 120000
+      });
+    } catch (txErr: any) {
+      console.warn('[CampaignDeploy] Interactive transaction timed out or pooler disconnected, falling back to direct resilient deployment:', txErr.message);
+      createdPublications = [];
       for (const p of posts) {
-        // Create Content post with resilience
         let content;
         try {
-          content = await tx.content.create({
+          content = await prisma.content.create({
             data: {
               brandId: brand.id,
               title: `[${p.phaseLabel}] ${p.title}`,
@@ -772,28 +847,23 @@ Return ONLY a valid raw JSON object:
               createdByUserId: userId
             }
           });
-        } catch (createErr: any) {
-          if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
-            content = await tx.content.create({
-              data: {
-                brandId: brand.id,
-                title: `[${p.phaseLabel}] ${p.title}`,
-                caption: p.caption,
-                hashtags: JSON.stringify(p.hashtags || []),
-                mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-                targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
-                format: p.format || 'POST',
-                status: 'SCHEDULED',
-                createdByUserId: userId
-              }
-            });
-          } else {
-            throw createErr;
-          }
+        } catch {
+          content = await prisma.content.create({
+            data: {
+              brandId: brand.id,
+              title: `[${p.phaseLabel}] ${p.title}`,
+              caption: p.caption,
+              hashtags: JSON.stringify(p.hashtags || []),
+              mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
+              targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+              format: p.format || 'POST',
+              status: 'SCHEDULED',
+              createdByUserId: userId
+            }
+          });
         }
 
-        // Create ContentVersion
-        await tx.contentVersion.create({
+        await prisma.contentVersion.create({
           data: {
             contentId: content.id,
             versionNumber: 1,
@@ -804,8 +874,7 @@ Return ONLY a valid raw JSON object:
           }
         });
 
-        // Create Publication scheduled for the exact date
-        const pub = await tx.publication.create({
+        const pub = await prisma.publication.create({
           data: {
             contentId: content.id,
             socialAccountId: activeAccount.id,
@@ -815,11 +884,9 @@ Return ONLY a valid raw JSON object:
           }
         });
 
-        createdPubs.push(pub);
+        createdPublications.push(pub);
       }
-
-      return createdPubs;
-    });
+    }
 
     return {
       success: true,
@@ -849,7 +916,7 @@ Return ONLY a valid raw JSON object:
     aspectRatio: string;
     source: 'OPENROUTER' | 'AI_ENGINE';
   }> {
-    const {
+    let {
       prompt,
       mediaType = 'IMAGE',
       productDescription = '',
@@ -859,6 +926,10 @@ Return ONLY a valid raw JSON object:
       host = 'localhost:5000',
       protocol = 'http'
     } = params;
+
+    if (host.includes('onrender.com')) {
+      protocol = 'https';
+    }
 
     const isReel = mediaType === 'REEL';
     const aspectRatio = isReel ? '9:16' : '1:1';

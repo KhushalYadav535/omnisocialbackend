@@ -31,6 +31,9 @@ import { LoggerService } from './services/logger.service';
 
 const app = express();
 
+// Trust reverse proxy (Render, Cloudflare, AWS ALB) for correct req.protocol and https URLs
+app.set('trust proxy', 1);
+
 // Middlewares
 app.use(LoggerService.correlationMiddleware);
 app.use(cors({
