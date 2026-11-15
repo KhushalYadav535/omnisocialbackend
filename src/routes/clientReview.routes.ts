@@ -34,6 +34,27 @@ router.post('/generate-token', authenticateToken, requireTenant, async (req: Aut
       return;
     }
 
+    // Safety check: ensure ClientShareToken table & columns exist in database
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ClientShareToken" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "brandId" TEXT NOT NULL,
+          "token" TEXT NOT NULL UNIQUE,
+          "name" TEXT NOT NULL DEFAULT 'Client Review Link',
+          "canApprove" BOOLEAN NOT NULL DEFAULT true,
+          "expiresAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL
+        );
+        ALTER TABLE "ClientShareToken" 
+          ADD COLUMN IF NOT EXISTS "name" TEXT DEFAULT 'Client Review Link',
+          ADD COLUMN IF NOT EXISTS "canApprove" BOOLEAN DEFAULT true;
+      `);
+    } catch {
+      // Ignored if table and columns already present
+    }
+
     // Check if valid token already exists
     let shareToken = await prisma.clientShareToken.findFirst({
       where: { brandId: brand.id }

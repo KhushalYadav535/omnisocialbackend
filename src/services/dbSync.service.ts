@@ -47,6 +47,8 @@ export class DbSyncService {
         "id" TEXT NOT NULL PRIMARY KEY,
         "brandId" TEXT NOT NULL,
         "token" TEXT NOT NULL UNIQUE,
+        "name" TEXT NOT NULL DEFAULT 'Client Review Link',
+        "canApprove" BOOLEAN NOT NULL DEFAULT true,
         "clientName" TEXT,
         "clientEmail" TEXT,
         "allowFeedback" BOOLEAN NOT NULL DEFAULT true,
@@ -54,6 +56,21 @@ export class DbSyncService {
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL
       );`,
+
+      // 4b. Ensure ClientShareToken columns exist if table was previously created
+      `ALTER TABLE "ClientShareToken" 
+        ADD COLUMN IF NOT EXISTS "name" TEXT DEFAULT 'Client Review Link',
+        ADD COLUMN IF NOT EXISTS "canApprove" BOOLEAN DEFAULT true;`,
+
+      // 4c. Ensure Brand columns exist (description, website for AI context)
+      `ALTER TABLE "Brand"
+        ADD COLUMN IF NOT EXISTS "description" TEXT,
+        ADD COLUMN IF NOT EXISTS "website" TEXT;`,
+
+      // 4d. Ensure BrandVoiceProfile columns exist (standardFaqs, responseGuidelines)
+      `ALTER TABLE "BrandVoiceProfile"
+        ADD COLUMN IF NOT EXISTS "standardFaqs" TEXT,
+        ADD COLUMN IF NOT EXISTS "responseGuidelines" TEXT;`,
 
       // 5. Ensure OAuthState table exists
       `CREATE TABLE IF NOT EXISTS "OAuthState" (
