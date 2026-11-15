@@ -101,6 +101,152 @@ export class DbSyncService {
         "tokensUsed" INTEGER NOT NULL DEFAULT 0,
         "costEstimate" DOUBLE PRECISION NOT NULL DEFAULT 0,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 9. Content Studio v3.0 columns on Content
+      `ALTER TABLE "Content"
+        ADD COLUMN IF NOT EXISTS "campaignId" TEXT,
+        ADD COLUMN IF NOT EXISTS "pillarId" TEXT;`,
+
+      // 10. MarketingStrategy table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "MarketingStrategy" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "version" INTEGER NOT NULL DEFAULT 1,
+        "businessContext" TEXT NOT NULL DEFAULT '',
+        "targetAudience" TEXT NOT NULL DEFAULT '[]',
+        "valueProposition" TEXT NOT NULL DEFAULT '',
+        "positioning" TEXT NOT NULL DEFAULT '',
+        "messagingPillars" TEXT NOT NULL DEFAULT '[]',
+        "marketingObjectives" TEXT NOT NULL DEFAULT '[]',
+        "channelStrategy" TEXT NOT NULL DEFAULT '[]',
+        "roadmap" TEXT NOT NULL DEFAULT '[]',
+        "approvedByUserId" TEXT,
+        "approvedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 11. ContentPillar table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "ContentPillar" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "description" TEXT,
+        "targetPercentage" INTEGER NOT NULL DEFAULT 25,
+        "color" TEXT NOT NULL DEFAULT '#6366f1',
+        "themes" TEXT NOT NULL DEFAULT '[]',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 12. ContentIdea table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "ContentIdea" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "source" TEXT NOT NULL DEFAULT 'AI_SUGGESTION',
+        "status" TEXT NOT NULL DEFAULT 'NEW',
+        "tags" TEXT NOT NULL DEFAULT '[]',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 13. ContentRequest table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "ContentRequest" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "objective" TEXT,
+        "targetAudience" TEXT,
+        "keyPoints" TEXT,
+        "deadline" TIMESTAMP(3),
+        "requestedByUserId" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'SUBMITTED',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 14. Campaign table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "Campaign" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "objective" TEXT,
+        "concept" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "startDate" TIMESTAMP(3),
+        "endDate" TIMESTAMP(3),
+        "budget" TEXT,
+        "keyMessages" TEXT NOT NULL DEFAULT '[]',
+        "targetAudience" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 15. MediaAsset table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "MediaAsset" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "fileUrl" TEXT NOT NULL,
+        "fileType" TEXT NOT NULL DEFAULT 'IMAGE',
+        "fileSize" INTEGER,
+        "dimensions" TEXT,
+        "tags" TEXT NOT NULL DEFAULT '[]',
+        "source" TEXT NOT NULL DEFAULT 'UPLOAD',
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 16. LaunchpadProgress table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "LaunchpadProgress" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "brandId" TEXT NOT NULL UNIQUE,
+        "currentStage" INTEGER NOT NULL DEFAULT 1,
+        "status" TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+        "stageData" TEXT NOT NULL DEFAULT '{}',
+        "completedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 17. SkillDefinition table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "SkillDefinition" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "name" TEXT NOT NULL,
+        "category" TEXT NOT NULL,
+        "description" TEXT NOT NULL,
+        "version" TEXT NOT NULL DEFAULT '1.0.0',
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "inputSchema" TEXT NOT NULL DEFAULT '{}',
+        "outputSchema" TEXT NOT NULL DEFAULT '{}',
+        "instructions" TEXT NOT NULL,
+        "contextRequirements" TEXT NOT NULL DEFAULT '[]',
+        "allowedTools" TEXT NOT NULL DEFAULT '[]',
+        "isSystem" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );`,
+
+      // 18. SkillExecution table (v3.0)
+      `CREATE TABLE IF NOT EXISTS "SkillExecution" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "tenantId" TEXT NOT NULL,
+        "brandId" TEXT NOT NULL,
+        "skillId" TEXT NOT NULL,
+        "userId" TEXT NOT NULL,
+        "input" TEXT NOT NULL DEFAULT '{}',
+        "output" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'COMPLETED',
+        "plan" TEXT,
+        "steps" TEXT,
+        "executionTimeMs" INTEGER,
+        "error" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );`
     ];
 

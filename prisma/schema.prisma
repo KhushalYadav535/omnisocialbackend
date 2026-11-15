@@ -83,6 +83,9 @@ model User {
   auditEvents          AuditEvent[]
   invitationsSent      TeamInvitation[] @relation("InvitedByUser")
   aiUsageLogs          AiUsageLog[]
+  createdRequests      ContentRequest[]
+  approvedStrategies   MarketingStrategy[]
+  skillExecutions      SkillExecution[]
   
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -124,6 +127,14 @@ model Brand {
   aiUsageLogs    AiUsageLog[]
   clientShareTokens ClientShareToken[]
   leadFunnels       LeadFunnel[]
+  marketingStrategies MarketingStrategy[]
+  contentPillars      ContentPillar[]
+  contentIdeas        ContentIdea[]
+  contentRequests     ContentRequest[]
+  campaigns           Campaign[]
+  mediaAssets         MediaAsset[]
+  launchpadProgress   LaunchpadProgress?
+  skillExecutions     SkillExecution[]
   
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
@@ -273,6 +284,11 @@ model Content {
   createdByUserId String
   createdByUser   User             @relation(fields: [createdByUserId], references: [id])
   
+  campaignId      String?
+  campaign        Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  pillarId        String?
+  pillar          ContentPillar?   @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+
   versions        ContentVersion[]
   publications    Publication[]
   
@@ -472,6 +488,158 @@ model LeadFunnel {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
+
+// -------------------------------------------------------------
+// Marketing Strategy & Brand Context (Specification v3.0)
+// -------------------------------------------------------------
+
+model MarketingStrategy {
+  id                  String    @id @default(uuid())
+  brandId             String
+  brand               Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  status              String    @default("DRAFT") // DRAFT, UNDER_REVIEW, APPROVED, SUPERSEDED
+  version             Int       @default(1)
+  businessContext     String    @default("") // Problem, solution, category, market context
+  targetAudience      String    @default("[]") // JSON array of segments & personas
+  valueProposition    String    @default("")
+  positioning         String    @default("")
+  messagingPillars    String    @default("[]") // JSON key messaging frameworks
+  marketingObjectives String    @default("[]") // JSON goals & KPIs
+  channelStrategy     String    @default("[]") // JSON channels, formats, cadence
+  roadmap             String    @default("[]") // JSON roadmap initiatives & milestones
+  approvedByUserId    String?
+  approvedByUser      User?     @relation(fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model ContentPillar {
+  id               String    @id @default(uuid())
+  brandId          String
+  brand            Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  targetPercentage Int       @default(25) // e.g. 25% of content
+  color            String    @default("#6366f1")
+  themes           String    @default("[]") // JSON array of topic strings
+  contents         Content[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model ContentIdea {
+  id          String   @id @default(uuid())
+  brandId     String
+  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  source      String   @default("AI_SUGGESTION") // AI_SUGGESTION, USER, COMPETITOR_RESEARCH, TREND
+  status      String   @default("NEW") // NEW, REVIEWED, PLANNED, ARCHIVED
+  tags        String   @default("[]") // JSON array
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ContentRequest {
+  id                String    @id @default(uuid())
+  brandId           String
+  brand             Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  title             String
+  objective         String?
+  targetAudience    String?
+  keyPoints         String?
+  deadline          DateTime?
+  requestedByUserId String
+  requestedByUser   User      @relation(fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  status            String    @default("SUBMITTED") // SUBMITTED, APPROVED, IN_PROGRESS, COMPLETED, REJECTED
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Campaign {
+  id             String    @id @default(uuid())
+  brandId        String
+  brand          Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  name           String
+  objective      String?
+  concept        String?
+  status         String    @default("DRAFT") // DRAFT, ACTIVE, COMPLETED, ARCHIVED
+  startDate      DateTime?
+  endDate        DateTime?
+  budget         String?
+  keyMessages    String    @default("[]") // JSON
+  targetAudience String?
+  contents       Content[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model MediaAsset {
+  id         String   @id @default(uuid())
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  title      String
+  fileUrl    String
+  fileType   String   @default("IMAGE") // IMAGE, VIDEO, DOCUMENT
+  fileSize   Int?
+  dimensions String?
+  tags       String   @default("[]") // JSON
+  source     String   @default("UPLOAD") // UPLOAD, AI_GENERATED, UNSPLASH
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model LaunchpadProgress {
+  id           String    @id @default(uuid())
+  brandId      String    @unique
+  brand        Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  currentStage Int       @default(1) // 1: Discovery, 2: Strategy, 3: Pillars & Calendar, 4: Campaign
+  status       String    @default("IN_PROGRESS") // NOT_STARTED, IN_PROGRESS, COMPLETED
+  stageData    String    @default("{}") // JSON string of saved stage answers & drafts
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model SkillDefinition {
+  id                  String           @id // e.g. "marketing-strategy-generator"
+  name                String
+  category            String           // MARKETING_STRATEGY, CONTENT_STRATEGY, WRITING_AND_COPY, CREATIVE_DEVELOPMENT, etc.
+  description         String
+  version             String           @default("1.0.0")
+  status              String           @default("ACTIVE") // ACTIVE, TESTING, DEPRECATED, DISABLED
+  inputSchema         String           @default("{}") // JSON schema
+  outputSchema        String           @default("{}") // JSON schema
+  instructions        String           // Core system instructions
+  contextRequirements String           @default("[]") // JSON
+  allowedTools        String           @default("[]") // JSON
+  isSystem            Boolean          @default(true)
+  executions          SkillExecution[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+}
+
+model SkillExecution {
+  id              String          @id @default(uuid())
+  tenantId        String
+  brandId         String
+  brand           Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  skillId         String
+  skill           SkillDefinition @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  input           String          @default("{}") // JSON input
+  output          String?         // JSON structured output
+  status          String          @default("COMPLETED") // REQUESTED, RUNNING, COMPLETED, FAILED, CANCELLED
+  plan            String?         // JSON execution plan
+  steps           String?         // JSON step trace
+  executionTimeMs Int?
+  error           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
 
 
 

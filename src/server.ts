@@ -27,6 +27,7 @@ import monitoringRoutes from './routes/monitoring.routes';
 import legalRoutes from './routes/legal.routes';
 import clientReviewRoutes from './routes/clientReview.routes';
 import leadFunnelRoutes from './routes/leadFunnel.routes';
+import contentStudioRoutes from './routes/contentStudio.routes';
 import { LoggerService } from './services/logger.service';
 
 const app = express();
@@ -117,6 +118,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/monitoring', monitoringRoutes);
 app.use('/api/client-review', clientReviewRoutes);
 app.use('/api/lead-funnels', leadFunnelRoutes);
+app.use('/api/content-studio', contentStudioRoutes);
 app.use('/api', businessRoutes);
 app.use('/', legalRoutes);
 
