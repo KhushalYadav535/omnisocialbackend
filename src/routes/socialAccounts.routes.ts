@@ -663,44 +663,75 @@ router.post('/quick-connect', async (req: AuthRequest, res: Response): Promise<v
       return;
     }
 
-    // Inspect token via Meta /me and /debug_token
+    const platUpper = platform.toUpperCase();
     let resolvedId: string | null = null;
     let resolvedName: string | null = null;
-    try {
-      const meRes = await axios.get(`${config.meta.graphBaseUrl}/me`, {
-        params: {
-          access_token: accessToken,
-          fields: 'id,name,category'
-        },
-        timeout: 10000
-      });
-      if (meRes.data?.id) {
-        resolvedId = meRes.data.id;
-        resolvedName = meRes.data.name;
-      }
-    } catch (meErr) {
-      // ignore, fall back to debug_token
-    }
+    let tokenExpiresAt: Date = new Date(Date.now() + 90 * 86400000);
 
-    const inspection = await MetaService.inspectToken(accessToken);
-    if (!inspection.isValid && !resolvedId && !accessToken.startsWith('EAAB_mock_test') && !accessToken.startsWith('IG_') && !accessToken.startsWith('EAAB')) {
-      res.status(400).json({
-        error: `Invalid Meta access token: ${inspection.error || 'Token verification failed'}`
-      });
-      return;
+    // Platform-specific validation and inspection
+    if (platUpper === 'FACEBOOK' || platUpper === 'INSTAGRAM') {
+      try {
+        const meRes = await axios.get(`${config.meta.graphBaseUrl}/me`, {
+          params: { access_token: accessToken, fields: 'id,name,category' },
+          timeout: 10000
+        });
+        if (meRes.data?.id) {
+          resolvedId = meRes.data.id;
+          resolvedName = meRes.data.name;
+        }
+      } catch (meErr) {
+        // fall back to inspectToken
+      }
+
+      const inspection = await MetaService.inspectToken(accessToken);
+      if (!inspection.isValid && !resolvedId && !accessToken.startsWith('EAAB_mock_test') && !accessToken.startsWith('IG_') && !accessToken.startsWith('EAAB')) {
+        res.status(400).json({
+          error: `Invalid Meta access token: ${inspection.error || 'Token verification failed'}`
+        });
+        return;
+      }
+      if (inspection.expiresAt) tokenExpiresAt = inspection.expiresAt;
+    } else if (platUpper === 'TWITTER') {
+      resolvedId = resolvedId || `tw_${Date.now()}`;
+      resolvedName = resolvedName || accountNameCustom || '@BrandOfficial';
+    } else if (platUpper === 'GOOGLE') {
+      resolvedId = resolvedId || `gmb_${Date.now()}`;
+      resolvedName = resolvedName || accountNameCustom || 'Google Marketplace Profile';
     }
 
     // Encrypt token before persisting
     const encryptedToken = CryptoService.encrypt(accessToken);
-    const platformAccountId = resolvedId || inspection.appId || `manual_${Date.now()}`;
-    const accountName = accountNameCustom || resolvedName || (platform === 'FACEBOOK' ? 'Connected Facebook Page' : 'Connected Instagram Account');
+    const platformAccountId = resolvedId || `manual_${Date.now()}`;
+    const accountName = accountNameCustom || resolvedName || (
+      platUpper === 'FACEBOOK' ? 'Connected Facebook Page' :
+      platUpper === 'INSTAGRAM' ? 'Connected Instagram Account' :
+      platUpper === 'TWITTER' ? 'Connected X / Twitter Handle' :
+      platUpper === 'GOOGLE' ? 'Google Marketplace Store' :
+      'Connected Social Account'
+    );
     const finalUsername = usernameCustom ? usernameCustom.replace(/^@/, '') : accountName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+
+    // Capabilities based on platform
+    let capabilities = ['COMMENTS', 'DIRECT_MESSAGES', 'PUBLISHING'];
+    if (platUpper === 'INSTAGRAM') capabilities.push('REELS');
+    if (platUpper === 'LINKEDIN') capabilities.push('CAROUSELS');
+    if (platUpper === 'TWITTER') capabilities = ['POSTS', 'COMMENTS', 'DIRECT_MESSAGES', 'PUBLISHING'];
+    if (platUpper === 'GOOGLE') capabilities = ['REVIEWS', 'COMMENTS', 'PUBLISHING', 'STORE_UPDATES'];
+
+    // Default avatar
+    const defaultPic = platUpper === 'TWITTER'
+      ? 'https://images.unsplash.com/photo-1611605698335-8b1569810432?w=120&h=120&fit=crop'
+      : platUpper === 'GOOGLE'
+      ? 'https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?w=120&h=120&fit=crop'
+      : platUpper === 'INSTAGRAM'
+      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop'
+      : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=120&h=120&fit=crop';
 
     // Check if account already exists for this brand and platform to update or create
     const existing = await prisma.socialAccount.findFirst({
       where: {
         brandId: brand.id,
-        platform: platform.toUpperCase(),
+        platform: platUpper,
         OR: [
           { platformAccountId },
           { username: finalUsername }
@@ -715,33 +746,33 @@ router.post('/quick-connect', async (req: AuthRequest, res: Response): Promise<v
         data: {
           accountName,
           username: finalUsername,
-          profilePicUrl: profilePicUrlCustom || existing.profilePicUrl,
-          pageCategory: platform.toUpperCase() === 'INSTAGRAM' ? 'Instagram Professional' : (existing.pageCategory || 'Brand Page'),
+          profilePicUrl: profilePicUrlCustom || existing.profilePicUrl || defaultPic,
+          pageCategory: platUpper === 'INSTAGRAM' ? 'Instagram Professional' : platUpper === 'TWITTER' ? 'X / Twitter Account' : platUpper === 'GOOGLE' ? 'Google Marketplace Profile' : (existing.pageCategory || 'Brand Page'),
           accessToken: encryptedToken,
-          tokenExpiresAt: inspection.expiresAt || new Date(Date.now() + 60 * 86400000),
+          tokenExpiresAt,
           tokenStatus: 'VALID',
           isConnected: true,
           lastSyncedAt: new Date(),
-          capabilities: JSON.stringify(['COMMENTS', 'DIRECT_MESSAGES', 'PUBLISHING', ...(platform.toUpperCase() === 'INSTAGRAM' ? ['REELS'] : [])])
+          capabilities: JSON.stringify(capabilities)
         }
       });
     } else {
       account = await prisma.socialAccount.create({
         data: {
           brandId: brand.id,
-          platform: platform.toUpperCase(),
+          platform: platUpper,
           platformAccountId,
           accountName,
           username: finalUsername,
-          profilePicUrl: profilePicUrlCustom || (platform.toUpperCase() === 'INSTAGRAM' ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop' : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=120&h=120&fit=crop'),
-          pageCategory: platform.toUpperCase() === 'INSTAGRAM' ? 'Instagram Professional' : 'Brand Page',
+          profilePicUrl: profilePicUrlCustom || defaultPic,
+          pageCategory: platUpper === 'INSTAGRAM' ? 'Instagram Professional' : platUpper === 'TWITTER' ? 'X / Twitter Account' : platUpper === 'GOOGLE' ? 'Google Marketplace Profile' : 'Brand Page',
           accessToken: encryptedToken,
-          tokenExpiresAt: inspection.expiresAt || new Date(Date.now() + 60 * 86400000),
+          tokenExpiresAt,
           tokenStatus: 'VALID',
           isConnected: true,
           lastSyncedAt: new Date(),
-          capabilities: JSON.stringify(['COMMENTS', 'DIRECT_MESSAGES', 'PUBLISHING', ...(platform.toUpperCase() === 'INSTAGRAM' ? ['REELS'] : [])]),
-          metadata: JSON.stringify({ connectedVia: 'BYOK_DIRECT_TOKEN' })
+          capabilities: JSON.stringify(capabilities),
+          metadata: JSON.stringify({ connectedVia: 'BYOK_DIRECT_TOKEN', connectedAt: new Date().toISOString() })
         }
       });
     }
@@ -757,7 +788,7 @@ router.post('/quick-connect', async (req: AuthRequest, res: Response): Promise<v
 
     res.status(201).json({
       success: true,
-      message: `${platform} account "${account.accountName}" connected securely`,
+      message: `${platUpper} account "${account.accountName}" connected securely`,
       account: sanitizeAccount(account)
     });
   } catch (err: any) {

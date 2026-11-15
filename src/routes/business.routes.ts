@@ -200,12 +200,71 @@ router.post('/brands', async (req: AuthRequest, res: Response): Promise<void> =>
   }
 });
 
-// 5. Update Brand Voice Profile & AI Guidelines
+// 5. Update Brand Core Details (Name, Description, Website, Logo)
+router.put('/brands/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const { name, description, website, logoUrl, status } = req.body;
+
+    const brand = await prisma.brand.findFirst({
+      where: {
+        id,
+        business: { tenantId: req.user?.tenantId! }
+      }
+    });
+
+    if (!brand) {
+      res.status(404).json({ error: 'Brand not found or not owned by your tenant' });
+      return;
+    }
+
+    const updated = await prisma.brand.update({
+      where: { id },
+      data: {
+        ...(name ? { name } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(website !== undefined ? { website } : {}),
+        ...(logoUrl !== undefined ? { logoUrl } : {}),
+        ...(status ? { status } : {})
+      },
+      include: { voiceProfile: true }
+    });
+
+    await AuditService.record({
+      tenantId: req.user?.tenantId,
+      userId: req.user?.id,
+      action: 'BRAND_DETAILS_UPDATED',
+      entityType: 'Brand',
+      entityId: id,
+      details: { name: updated.name }
+    });
+
+    res.json({ success: true, brand: updated });
+  } catch (err: any) {
+    console.error('Update brand error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update brand' });
+  }
+});
+
+// 6. Update Brand Voice Profile, FAQs & AI Response Guidelines
 router.put('/brands/:id/voice', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
-    const { tone, writingStyle, targetAudience, keyTerminology, bannedKeywords, standardFaqs, responseGuidelines, exampleReplies } = req.body;
+    const {
+      name,
+      description,
+      website,
+      tone,
+      writingStyle,
+      targetAudience,
+      keyTerminology,
+      bannedKeywords,
+      standardFaqs,
+      responseGuidelines,
+      exampleReplies
+    } = req.body;
 
     // Verify brand ownership through business relation to current tenant
     const brand = await prisma.brand.findFirst({
@@ -220,6 +279,18 @@ router.put('/brands/:id/voice', async (req: AuthRequest, res: Response): Promise
     if (!brand) {
       res.status(404).json({ error: 'Brand not found or not owned by your tenant' });
       return;
+    }
+
+    // Also update brand level description/website/name if provided
+    if (name || description !== undefined || website !== undefined) {
+      await prisma.brand.update({
+        where: { id },
+        data: {
+          ...(name ? { name } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(website !== undefined ? { website } : {})
+        }
+      });
     }
 
     const exampleRepliesStr = typeof exampleReplies === 'string'

@@ -100,13 +100,15 @@ export class AiService {
     const systemPrompt = `You are the designated Senior Social Media Engagement & Community Specialist for "${brandContext.brandName}".
 Your mission is to generate 3 distinct, high-converting, empathetic, and on-brand reply suggestions for human review.
 
-### Brand Identity & Voice Persona:
+### Brand Identity, Products & Services Base:
 - Brand Name: ${brandContext.brandName}
+- Company & Product Overview: ${brandContext.description || 'High quality products and services dedicated to customer excellence.'}
+- Official Website: ${brandContext.website || 'Not specified'}
 - Industry: ${brandContext.industry}
 - Tone of Voice: ${brandContext.tone}
 - Writing Style: ${brandContext.writingStyle}
 - Target Audience: ${brandContext.targetAudience}
-- Response Guidelines: ${brandContext.responseGuidelines}
+- Response Directives for Comments & DMs: ${brandContext.responseGuidelines}
 ${bannedClause}
 
 ### Approved Knowledge Base & FAQs:
