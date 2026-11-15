@@ -72,9 +72,19 @@ router.post('/generate-token', authenticateToken, requireTenant, async (req: Aut
       });
     }
 
-    const host = req.get('host') || 'localhost:3000';
-    const protocol = req.protocol || 'http';
-    const reviewUrl = `${protocol}://${host}/review/${shareToken.token}`;
+    // Determine the frontend origin (Next.js app), never the raw Express backend host
+    let frontendOrigin = req.body?.origin || req.get('origin');
+    if (!frontendOrigin && req.get('referer')) {
+      try {
+        const refUrl = new URL(req.get('referer')!);
+        frontendOrigin = refUrl.origin;
+      } catch {}
+    }
+    if (!frontendOrigin) {
+      frontendOrigin = process.env.FRONTEND_URL || 'https://omnisocial-l5uq.vercel.app';
+    }
+
+    const reviewUrl = `${frontendOrigin.replace(/\/$/, '')}/review/${shareToken.token}`;
 
     res.json({
       success: true,

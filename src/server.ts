@@ -122,6 +122,13 @@ app.use('/api/content-studio', contentStudioRoutes);
 app.use('/api', businessRoutes);
 app.use('/', legalRoutes);
 
+// Direct Client Review Redirect (If user or client opens backend domain /review/:token directly)
+app.get('/review/:token', (req, res) => {
+  const token = req.params.token;
+  const frontendOrigin = process.env.FRONTEND_URL || 'https://omnisocial-l5uq.vercel.app';
+  res.redirect(`${frontendOrigin.replace(/\/$/, '')}/review/${token}`);
+});
+
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   LoggerService.error('UNHANDLED_EXCEPTION', err, {
