@@ -282,9 +282,18 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
           : acc.accessToken;
         metaInsights = await MetaService.getPageInsights(acc.platformAccountId, rawToken);
       } catch (metaErr: any) {
+        const rawMsg = metaErr.message || '';
+        let cleanReason = 'Live external reach telemetry requires verified Meta Business App read_insights approval.';
+        if (rawMsg.includes('#100') || rawMsg.includes('valid insights metric')) {
+          cleanReason = 'Meta Graph API v26.0 external metric permissions pending Meta App Review. Internal database telemetry is active.';
+        } else if (rawMsg.includes('#190') || rawMsg.includes('OAuthException')) {
+          cleanReason = 'Page token expired or invalid. Reconnect account in Channels settings to resume external metrics.';
+        } else if (rawMsg.includes('#200')) {
+          cleanReason = 'Page permissions required: account needs administrator insights access.';
+        }
         metaInsights = {
           status: 'UNAVAILABLE',
-          reason: metaErr.message || 'Meta Insights call failed'
+          reason: cleanReason
         };
       }
     }
