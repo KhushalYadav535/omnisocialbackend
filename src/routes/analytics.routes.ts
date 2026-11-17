@@ -541,7 +541,7 @@ router.get('/export', requirePermission('EXPORT_DATA'), async (req: AuthRequest,
 // Feature 3B: 1-Click Executive AI Client Performance Report (PDF Export)
 router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId, period = 'month' } = req.query;
+    const { brandId, period = 'month', download } = req.query;
 
     if (!brandId || typeof brandId !== 'string') {
       res.status(400).json({ error: 'brandId query parameter is required' });
@@ -549,7 +549,10 @@ router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promis
     }
 
     const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
 
     const report = await ClientReportService.generateClientReportPdf(
       brandId,
@@ -558,6 +561,11 @@ router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promis
       protocol,
       period as 'week' | 'month'
     );
+
+    if (download === 'true' && report.pdfPath) {
+      res.download(report.pdfPath, report.filename);
+      return;
+    }
 
     res.json({
       success: true,

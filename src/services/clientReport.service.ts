@@ -15,7 +15,7 @@ export class ClientReportService {
     host: string = 'localhost:5000',
     protocol: string = 'http',
     period: 'week' | 'month' = 'month'
-  ): Promise<{ pdfUrl: string; pdfPath: string; filename: string }> {
+  ): Promise<{ pdfUrl: string; pdfPath: string; filename: string; pdfBase64?: string }> {
     const brand = await prisma.brand.findFirst({
       where: { id: brandId, business: { tenantId } },
       include: {
@@ -226,8 +226,12 @@ Return JSON with:
       doc.end();
 
       stream.on('finish', () => {
+        let pdfBase64: string | undefined;
+        try {
+          pdfBase64 = fs.readFileSync(pdfPath).toString('base64');
+        } catch {}
         const pdfUrl = `${protocol}://${host}/uploads/${filename}`;
-        resolve({ pdfUrl, pdfPath, filename });
+        resolve({ pdfUrl, pdfPath, filename, pdfBase64 });
       });
 
       stream.on('error', (err) => reject(err));

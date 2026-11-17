@@ -1124,6 +1124,13 @@ export class MetaService {
         };
       }
 
+      if (code === 100 || (metaErr?.message && metaErr.message.includes('valid insights metric'))) {
+        return {
+          status: 'UNSUPPORTED',
+          reason: 'Meta Graph API v26.0 external metric permissions pending Meta App Review. Internal database telemetry is active.'
+        };
+      }
+
       if (code === 10 || (code >= 200 && code <= 299)) {
         return {
           status: 'PERMISSION_REQUIRED',

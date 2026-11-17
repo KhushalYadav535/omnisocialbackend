@@ -341,6 +341,8 @@ router.get('/pillars', async (req: AuthRequest, res: Response): Promise<void> =>
     res.json({
       pillars: pillars.map(p => ({
         ...p,
+        title: p.name,
+        percentage: p.targetPercentage,
         themes: JSON.parse(p.themes || '[]'),
         postCount: p._count.contents
       }))
@@ -489,10 +491,23 @@ router.get('/ideas', async (req: AuthRequest, res: Response): Promise<void> => {
     });
 
     res.json({
-      ideas: ideas.map(i => ({
-        ...i,
-        tags: JSON.parse(i.tags || '[]')
-      }))
+      ideas: ideas.map(i => {
+        let hook = '';
+        let cleanDesc = i.description || '';
+        if (cleanDesc.includes('\n\n')) {
+          const parts = cleanDesc.split('\n\n');
+          hook = parts[0];
+          cleanDesc = parts.slice(1).join('\n\n');
+        } else if (cleanDesc.length > 0 && cleanDesc.length < 140) {
+          hook = cleanDesc;
+        }
+        return {
+          ...i,
+          hook,
+          description: cleanDesc,
+          tags: JSON.parse(i.tags || '[]')
+        };
+      })
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch ideas' });
@@ -534,6 +549,7 @@ const handleAiGenerateIdeas = async (req: AuthRequest, res: Response): Promise<v
     const brand = await prisma.brand.findUnique({ where: { id: brandId } });
     const isTestName = !brand?.name || /^(test|tesdy|demo|temp|sample|asdf)/i.test(brand.name);
     const brandDisplayName = isTestName ? 'Top Industry Leaders' : brand.name;
+    const verb = isTestName ? 'Execute' : 'Executes';
     const focus = topic || brand?.description || 'Industry Best Practices & Modern Growth';
 
     const ideasBlueprint = [
@@ -550,7 +566,7 @@ const handleAiGenerateIdeas = async (req: AuthRequest, res: Response): Promise<v
         tags: ['Playbook', 'Carousel', 'How-To', 'Education']
       },
       {
-        title: `Behind The Scenes: How ${brandDisplayName} Executes In Half The Time`,
+        title: `Behind The Scenes: How ${brandDisplayName} ${verb} In Half The Time`,
         hook: `Most teams waste 20+ hours a week on manual tasks. Here is what we automate instead.`,
         description: `Authentic workflow teardown showing tool stack, prompt chains, and editorial governance.`,
         tags: ['BTS', 'Automation', 'Productivity', 'CaseStudy']
@@ -569,12 +585,25 @@ const handleAiGenerateIdeas = async (req: AuthRequest, res: Response): Promise<v
       }
     ];
 
+    const existingIdeas = await prisma.contentIdea.findMany({
+      where: { brandId },
+      select: { title: true }
+    });
+    const existingTitles = new Set(existingIdeas.map(i => i.title.toLowerCase().trim()));
+
     const createdIdeas = [];
     for (const item of ideasBlueprint.slice(0, Math.min(count, 5))) {
+      // If title already exists, make it unique
+      let uniqueTitle = item.title;
+      if (existingTitles.has(uniqueTitle.toLowerCase().trim())) {
+        uniqueTitle = `${item.title} (Vol. ${Math.floor(Math.random() * 90) + 10})`;
+      }
+      existingTitles.add(uniqueTitle.toLowerCase().trim());
+
       const idea = await prisma.contentIdea.create({
         data: {
           brandId,
-          title: item.title,
+          title: uniqueTitle,
           description: `${item.hook}\n\n${item.description}`,
           source: 'AI_BRAINSTORM',
           status: 'NEW',
@@ -693,10 +722,17 @@ router.get('/campaigns', async (req: AuthRequest, res: Response): Promise<void> 
     });
 
     res.json({
-      campaigns: campaigns.map(c => ({
-        ...c,
-        keyMessages: JSON.parse(c.keyMessages || '[]')
-      }))
+      campaigns: campaigns.map(c => {
+        let parsedKeys: string[] = [];
+        try { parsedKeys = JSON.parse(c.keyMessages || '[]'); } catch { parsedKeys = []; }
+        return {
+          ...c,
+          description: c.concept || c.objective || '',
+          goal: c.objective || 'AWARENESS',
+          coreMessage: parsedKeys[0] || c.concept || '',
+          keyMessages: parsedKeys
+        };
+      })
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch campaigns' });
@@ -706,31 +742,104 @@ router.get('/campaigns', async (req: AuthRequest, res: Response): Promise<void> 
 router.post('/campaigns', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const brandId = await resolveBrandId(req);
-    const { name, objective, concept, startDate, endDate, budget, keyMessages, targetAudience } = req.body;
+    const { name, objective, goal, concept, description, startDate, endDate, budget, keyMessages, coreMessage, targetAudience } = req.body;
 
     if (!name) {
       res.status(400).json({ error: 'Campaign name is required' });
       return;
     }
 
+    const resolvedMessages = Array.isArray(keyMessages) && keyMessages.length > 0
+      ? keyMessages
+      : (coreMessage ? [coreMessage] : []);
+
     const campaign = await prisma.campaign.create({
       data: {
         brandId,
         name,
-        objective: objective || '',
-        concept: concept || '',
-        status: 'DRAFT',
+        objective: objective || goal || 'AWARENESS',
+        concept: concept || description || '',
+        status: 'ACTIVE',
         startDate: startDate ? new Date(startDate) : null,
         endDate: endDate ? new Date(endDate) : null,
         budget: budget || '',
-        keyMessages: JSON.stringify(keyMessages || []),
+        keyMessages: JSON.stringify(resolvedMessages),
         targetAudience: targetAudience || ''
       }
     });
 
-    res.json({ success: true, campaign });
+    res.json({
+      success: true,
+      campaign: {
+        ...campaign,
+        description: campaign.concept || campaign.objective || '',
+        goal: campaign.objective,
+        coreMessage: resolvedMessages[0] || campaign.concept || '',
+        keyMessages: resolvedMessages,
+        contents: []
+      }
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create campaign' });
+  }
+});
+
+// AI Synthesize Campaign Brief & Roadmap (Section 6.6)
+router.post('/campaigns/ai-generate-brief', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const brandId = await resolveBrandId(req);
+    const { productBrief, goal = 'AWARENESS' } = req.body;
+
+    if (!productBrief) {
+      res.status(400).json({ error: 'Product brief is required' });
+      return;
+    }
+
+    const brand = await prisma.brand.findUnique({ where: { id: brandId } });
+    const isTestName = !brand?.name || /^(test|tesdy|demo|temp|sample|asdf)/i.test(brand.name);
+    const brandDisplayName = isTestName ? 'Top Industry Leaders' : brand.name;
+
+    const startDate = new Date();
+    const endDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const defaultTitle = `${brandDisplayName} ${goal.charAt(0) + goal.slice(1).toLowerCase()} Sprint`;
+    const defaultCore = productBrief.slice(0, 140);
+    const defaultConcept = `Strategic 7-day multi-channel sprint amplifying: "${productBrief.slice(0, 120)}"`;
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        brandId,
+        name: defaultTitle,
+        objective: goal,
+        concept: defaultConcept,
+        status: 'ACTIVE',
+        startDate,
+        endDate,
+        keyMessages: JSON.stringify([defaultCore]),
+        targetAudience: 'Target buyers, industry professionals, and engaged social followers'
+      }
+    });
+
+    res.json({
+      success: true,
+      campaign: {
+        ...campaign,
+        description: campaign.concept,
+        goal: campaign.objective,
+        coreMessage: defaultCore,
+        keyMessages: [defaultCore],
+        deliverables: [
+          { day: 'Day 1', title: 'Problem Awareness & Founder Hook', format: 'POST' },
+          { day: 'Day 3', title: 'Educational Value Carousel', format: 'CAROUSEL' },
+          { day: 'Day 5', title: 'Behind-The-Scenes Proof / Reel', format: 'REEL' },
+          { day: 'Day 7', title: 'Official Launch & Direct Offer', format: 'POST' }
+        ],
+        contents: []
+      }
+    });
+  } catch (err: any) {
+    console.error('AI campaign brief error:', err);
+    res.status(500).json({ error: err.message || 'Failed to synthesize campaign brief' });
   }
 });
 
@@ -765,11 +874,50 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
       orderBy: { createdAt: 'desc' }
     });
 
+    let formattedMedia = media.map(m => ({
+      ...m,
+      url: m.fileUrl,
+      format: m.fileType,
+      tags: JSON.parse(m.tags || '[]')
+    }));
+
+    // If media library is empty, include assets from existing brand contents
+    if (formattedMedia.length === 0) {
+      const contentsWithMedia = await prisma.content.findMany({
+        where: { brandId },
+        take: 12,
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const extracted: any[] = [];
+      for (const c of contentsWithMedia) {
+        try {
+          const urls = JSON.parse(c.mediaUrls || '[]');
+          if (Array.isArray(urls) && urls.length > 0) {
+            urls.forEach((u, uIdx) => {
+              if (u && typeof u === 'string') {
+                extracted.push({
+                  id: `content_asset_${c.id}_${uIdx}`,
+                  brandId,
+                  title: c.title || 'Brand Content Asset',
+                  url: u,
+                  fileUrl: u,
+                  format: c.format || 'IMAGE',
+                  fileType: c.format || 'IMAGE',
+                  tags: ['ContentPost', c.format || 'Post'],
+                  source: 'POST_ATTACHMENT',
+                  createdAt: c.createdAt
+                });
+              }
+            });
+          }
+        } catch {}
+      }
+      formattedMedia = extracted;
+    }
+
     res.json({
-      media: media.map(m => ({
-        ...m,
-        tags: JSON.parse(m.tags || '[]')
-      }))
+      media: formattedMedia
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch media assets' });
@@ -779,25 +927,36 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
 router.post('/media', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const brandId = await resolveBrandId(req);
-    const { title, fileUrl, fileType, tags, source } = req.body;
+    const { title, fileUrl, url, fileType, format, tags, source } = req.body;
+    const targetUrl = (fileUrl || url || '').trim();
 
-    if (!fileUrl) {
+    if (!targetUrl) {
       res.status(400).json({ error: 'fileUrl is required' });
       return;
     }
+
+    const targetType = (fileType || format || 'IMAGE').toUpperCase();
 
     const asset = await prisma.mediaAsset.create({
       data: {
         brandId,
         title: title || 'Media Asset',
-        fileUrl,
-        fileType: fileType || 'IMAGE',
+        fileUrl: targetUrl,
+        fileType: targetType,
         tags: JSON.stringify(tags || []),
         source: source || 'UPLOAD'
       }
     });
 
-    res.json({ success: true, asset });
+    res.json({
+      success: true,
+      asset: {
+        ...asset,
+        url: asset.fileUrl,
+        format: asset.fileType,
+        tags: JSON.parse(asset.tags || '[]')
+      }
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to save media asset' });
   }
@@ -818,6 +977,7 @@ router.get('/approvals', async (req: AuthRequest, res: Response): Promise<void> 
     const pendingContents = await prisma.content.findMany({
       where: {
         brandId,
+        status: { not: 'FAILED' },
         clientApprovalStatus: filterStatus as any
       },
       include: {
@@ -988,14 +1148,17 @@ router.post('/launchpad/deploy', async (req: AuthRequest, res: Response): Promis
     }
 
     // 2. Deploy Content Pillars
-    if (Array.isArray(data.stage3?.corePillars) && data.stage3.corePillars.length > 0) {
-      for (const p of data.stage3.corePillars) {
+    const rawPillars = data.stage3?.corePillars || data.stage3?.pillars;
+    if (Array.isArray(rawPillars) && rawPillars.length > 0) {
+      for (const p of rawPillars) {
+        const pName = p.name || p.title || 'Core Pillar';
+        const pPct = Number(p.targetPercentage || p.percentage) || 25;
         await prisma.contentPillar.create({
           data: {
             brandId,
-            name: p.name || 'Core Pillar',
+            name: pName,
             description: p.description || '',
-            targetPercentage: Number(p.targetPercentage) || 25,
+            targetPercentage: pPct,
             color: p.color || '#6366f1',
             themes: JSON.stringify(p.themes || [])
           }
@@ -1003,13 +1166,79 @@ router.post('/launchpad/deploy', async (req: AuthRequest, res: Response): Promis
       }
     }
 
-    // 3. Mark Launchpad complete
+    // 3. Deploy Stage 4 Campaign and Calendar Deliverables
+    const brand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      include: { socialAccounts: true }
+    });
+    const brandDisplayName = brand?.name || 'Apex Digital';
+    const campaignName = data.stage4?.campaignName || `${brandDisplayName} 7-Day Launch Sprint`;
+    const coreConcept = data.stage2?.positioningStatement || `${brandDisplayName} Brand Foundation Launch`;
+
+    const campaign = await prisma.campaign.create({
+      data: {
+        brandId,
+        name: campaignName,
+        objective: data.stage4?.campaignGoal || 'AWARENESS',
+        concept: coreConcept,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 7 * 86400000),
+        keyMessages: JSON.stringify([data.stage2?.valueProposition || 'Official Brand Launch']),
+        targetAudience: data.stage1?.idealCustomer || 'Target Audience'
+      }
+    });
+
+    const deliverables = data.stage4?.deliverables || [
+      'Day 1: Problem Awareness & Founder Hook',
+      'Day 3: Educational Value Carousel',
+      'Day 5: Behind-The-Scenes Proof / Reel',
+      'Day 7: Official Launch & Direct Offer'
+    ];
+
+    const activeSocialAccount = brand?.socialAccounts?.[0];
+
+    for (let i = 0; i < deliverables.length; i++) {
+      const delivText = typeof deliverables[i] === 'string' ? deliverables[i] : deliverables[i].title || 'Launch Deliverable';
+      const scheduledDate = new Date(Date.now() + (i * 2 + 1) * 86400000);
+
+      const postContent = await prisma.content.create({
+        data: {
+          brandId,
+          campaignId: campaign.id,
+          title: `[Launch Sprint] ${delivText.slice(0, 45)}`,
+          caption: `${delivText}\n\nWe are officially unveiling the next generation of our product. Tuned for modern growth, clarity, and consistency.\n\nDrop a comment below to get early access!`,
+          hashtags: JSON.stringify([`#${brandDisplayName.replace(/\s+/g, '')}`, '#BrandLaunch', '#Growth2026']),
+          format: delivText.toLowerCase().includes('reel') ? 'REEL' : delivText.toLowerCase().includes('carousel') ? 'CAROUSEL' : 'POST',
+          status: 'QUEUED',
+          createdByUserId: req.user?.id || brand?.businessId || 'system'
+        }
+      });
+
+      if (activeSocialAccount) {
+        await prisma.publication.create({
+          data: {
+            contentId: postContent.id,
+            socialAccountId: activeSocialAccount.id,
+            scheduledFor: scheduledDate,
+            status: 'QUEUED',
+            idempotencyKey: `launchpad_${postContent.id}_${Date.now()}`
+          }
+        });
+      }
+    }
+
+    // 4. Mark Launchpad complete
     await prisma.launchpadProgress.update({
       where: { brandId },
       data: { status: 'COMPLETED', completedAt: new Date() }
     });
 
-    res.json({ success: true, message: 'Brand foundation successfully deployed from Launchpad!' });
+    res.json({
+      success: true,
+      message: 'Brand foundation successfully deployed from Launchpad!',
+      campaignId: campaign.id
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to deploy launchpad' });
   }

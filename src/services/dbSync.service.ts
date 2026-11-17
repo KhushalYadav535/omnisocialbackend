@@ -275,6 +275,71 @@ export class DbSyncService {
       }
     }
 
+    // Data Sanitization on startup
+    try {
+      // 1. Sanitize test brand name "tesdy" -> "Apex Digital"
+      await prisma.brand.updateMany({
+        where: {
+          OR: [
+            { name: { in: ['tesdy', 'Tesdy', 'test', 'Test', 'tesdy-320'] } },
+            { name: { contains: 'tesdy', mode: 'insensitive' } }
+          ]
+        },
+        data: { name: 'Apex Digital' }
+      });
+
+      await prisma.brand.updateMany({
+        where: {
+          OR: [
+            { slug: { contains: 'tesdy', mode: 'insensitive' } }
+          ]
+        },
+        data: { slug: 'apex-digital' }
+      });
+
+      const profiles = await prisma.brandVoiceProfile.findMany();
+      for (const p of profiles) {
+        if (p.responseGuidelines && /tesdy/i.test(p.responseGuidelines)) {
+          await prisma.brandVoiceProfile.update({
+            where: { id: p.id },
+            data: { responseGuidelines: p.responseGuidelines.replace(/tesdy/gi, 'Apex Digital') }
+          });
+        }
+      }
+
+      // 2. Deduplicate duplicate Jordan Lee user rows
+      const jordanLees = await prisma.user.findMany({
+        where: { name: 'Jordan Lee' },
+        orderBy: { createdAt: 'asc' }
+      });
+      if (jordanLees.length > 1) {
+        const toDelete = jordanLees.slice(1).map(u => u.id);
+        await prisma.user.deleteMany({
+          where: { id: { in: toDelete } }
+        });
+      }
+
+      // 3. Deduplicate duplicate seeded posts
+      const duplicateTitles = [
+        'Provide 3 effortless ways to style linen blazers this season',
+        'Introduce our upcoming eco-friendly resort capsule'
+      ];
+      for (const title of duplicateTitles) {
+        const posts = await prisma.content.findMany({
+          where: { title: { contains: title } },
+          orderBy: { createdAt: 'asc' }
+        });
+        if (posts.length > 1) {
+          const duplicateIds = posts.slice(1).map(p => p.id);
+          await prisma.publication.deleteMany({ where: { contentId: { in: duplicateIds } } });
+          await prisma.contentVersion.deleteMany({ where: { contentId: { in: duplicateIds } } });
+          await prisma.content.deleteMany({ where: { id: { in: duplicateIds } } });
+        }
+      }
+    } catch (cleanErr: any) {
+      console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
+    }
+
     console.log('✅ [DbSync] Database schema columns & tables verified successfully!');
   }
 }
