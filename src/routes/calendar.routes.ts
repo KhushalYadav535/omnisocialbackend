@@ -266,6 +266,77 @@ router.patch('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthR
   }
 });
 
+router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    // Check if it matches a publication ID
+    const pub = await prisma.publication.findFirst({
+      where: {
+        id,
+        content: { brand: { business: { tenantId: req.user?.tenantId! } } }
+      },
+      include: { content: true }
+    });
+
+    if (pub) {
+      const contentId = pub.contentId;
+      await prisma.publication.delete({ where: { id: pub.id } });
+
+      // If no other publications remain for this content, delete the content and versions
+      const remaining = await prisma.publication.count({ where: { contentId } });
+      if (remaining === 0) {
+        await prisma.contentVersion.deleteMany({ where: { contentId } });
+        await prisma.content.delete({ where: { id: contentId } });
+      }
+
+      await AuditService.record({
+        tenantId: req.user?.tenantId,
+        userId: req.user?.id,
+        action: 'CALENDAR_POST_DELETED',
+        entityType: 'Publication',
+        entityId: pub.id,
+        details: { contentId, title: pub.content.title }
+      });
+
+      res.json({ success: true, message: 'Calendar event removed successfully' });
+      return;
+    }
+
+    // Check if it matches a Content ID directly
+    const content = await prisma.content.findFirst({
+      where: {
+        id,
+        brand: { business: { tenantId: req.user?.tenantId! } }
+      }
+    });
+
+    if (content) {
+      await prisma.publication.deleteMany({ where: { contentId: content.id } });
+      await prisma.contentVersion.deleteMany({ where: { contentId: content.id } });
+      await prisma.content.delete({ where: { id: content.id } });
+
+      await AuditService.record({
+        tenantId: req.user?.tenantId,
+        userId: req.user?.id,
+        action: 'CONTENT_POST_DELETED',
+        entityType: 'Content',
+        entityId: content.id,
+        details: { title: content.title }
+      });
+
+      res.json({ success: true, message: 'Post and scheduled events deleted successfully' });
+      return;
+    }
+
+    res.status(404).json({ error: 'Post or calendar event not found' });
+  } catch (err: any) {
+    console.error('Delete calendar event error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete calendar event' });
+  }
+});
+
 // =====================================================================
 // 4. Duplicate / Repeat a Past or Top-Performing Post (Performance Overlay)
 // =====================================================================

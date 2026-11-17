@@ -526,4 +526,42 @@ router.post('/:id/recycle-now', async (req: AuthRequest, res: Response): Promise
   }
 });
 
+// Delete Content Post
+router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    const content = await prisma.content.findFirst({
+      where: {
+        id,
+        brand: { business: { tenantId: req.user?.tenantId! } }
+      }
+    });
+
+    if (!content) {
+      res.status(404).json({ error: 'Post not found or access denied' });
+      return;
+    }
+
+    await prisma.publication.deleteMany({ where: { contentId: id } });
+    await prisma.contentVersion.deleteMany({ where: { contentId: id } });
+    await prisma.content.delete({ where: { id } });
+
+    await AuditService.record({
+      tenantId: req.user?.tenantId,
+      userId: req.user?.id,
+      action: 'CONTENT_POST_DELETED',
+      entityType: 'Content',
+      entityId: id,
+      details: { title: content.title }
+    });
+
+    res.json({ success: true, message: 'Post deleted successfully' });
+  } catch (err: any) {
+    console.error('Delete post error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete post' });
+  }
+});
+
 export default router;
