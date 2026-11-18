@@ -80,8 +80,11 @@ router.post('/generate-token', authenticateToken, requireTenant, async (req: Aut
         frontendOrigin = refUrl.origin;
       } catch {}
     }
-    if (!frontendOrigin) {
-      frontendOrigin = process.env.FRONTEND_URL || 'https://omnisocial-l5uq.vercel.app';
+    // Hard safeguard: never allow backend host or onrender domain to be used as client review portal URL
+    if (!frontendOrigin || frontendOrigin.includes('onrender.com') || frontendOrigin.includes('backend') || frontendOrigin.includes('localhost:5000')) {
+      frontendOrigin = process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('onrender.com') && !process.env.FRONTEND_URL.includes('backend')
+        ? process.env.FRONTEND_URL
+        : 'https://omnisocial-l5uq.vercel.app';
     }
 
     const reviewUrl = `${frontendOrigin.replace(/\/$/, '')}/review/${shareToken.token}`;

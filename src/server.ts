@@ -125,7 +125,10 @@ app.use('/', legalRoutes);
 // Direct Client Review Redirect (If user or client opens backend domain /review/:token directly)
 app.get('/review/:token', (req, res) => {
   const token = req.params.token;
-  const frontendOrigin = process.env.FRONTEND_URL || 'https://omnisocial-l5uq.vercel.app';
+  let frontendOrigin = process.env.FRONTEND_URL || 'https://omnisocial-l5uq.vercel.app';
+  if (frontendOrigin.includes('onrender.com') || frontendOrigin.includes('backend')) {
+    frontendOrigin = 'https://omnisocial-l5uq.vercel.app';
+  }
   res.redirect(`${frontendOrigin.replace(/\/$/, '')}/review/${token}`);
 });
 
