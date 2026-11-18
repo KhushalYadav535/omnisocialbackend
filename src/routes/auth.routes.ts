@@ -169,6 +169,11 @@ router.post('/register-tenant', async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    if (typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters long' });
+      return;
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
 
     // Check if user or super admin already exists with this email

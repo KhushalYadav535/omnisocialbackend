@@ -240,9 +240,21 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
       where: { id: contentId },
       data: {
         clientApprovalStatus: newApprovalStatus,
-        clientFeedback: feedback ? feedback.trim() : (action === 'APPROVE' ? 'Approved by Client via Magic Link' : 'Changes requested')
+        clientFeedback: feedback ? feedback.trim() : (action === 'APPROVE' ? 'Approved by Client via Magic Link' : 'Changes requested'),
+        status: action === 'APPROVE' ? 'SCHEDULED' : 'DRAFT'
       }
     });
+
+    if (action === 'APPROVE') {
+      await prisma.publication.updateMany({
+        where: { contentId, status: { in: ['DRAFT', 'CANCELLED'] } },
+        data: { status: 'QUEUED' }
+      });
+    } else {
+      await prisma.publication.deleteMany({
+        where: { contentId, status: 'QUEUED' }
+      });
+    }
 
     res.json({
       success: true,

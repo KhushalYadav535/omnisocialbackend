@@ -789,6 +789,7 @@ Return ONLY a valid raw JSON object:
                 targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
                 format: p.format || 'POST',
                 status: 'SCHEDULED',
+                clientApprovalStatus: 'APPROVED',
                 firstComment: p.firstComment || null,
                 viralityScore: 88 + Math.floor(Math.random() * 9),
                 createdByUserId: userId
@@ -861,6 +862,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
               format: p.format || 'POST',
               status: 'SCHEDULED',
+              clientApprovalStatus: 'APPROVED',
               firstComment: p.firstComment || null,
               viralityScore: 88 + Math.floor(Math.random() * 9),
               createdByUserId: userId
@@ -877,6 +879,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
               format: p.format || 'POST',
               status: 'SCHEDULED',
+              clientApprovalStatus: 'APPROVED',
               createdByUserId: userId
             }
           });

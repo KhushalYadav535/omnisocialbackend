@@ -438,15 +438,24 @@ export class DbSyncService {
         }
       });
 
-      // 5. Deduplicate duplicate ContentPillars and rebalance to exactly 100%
+      // 5. Deduplicate duplicate ContentPillars by thematic category and rebalance to exactly 100%
       const allPillars = await prisma.contentPillar.findMany({
         orderBy: { createdAt: 'asc' }
       });
+      const getPillarCategory = (name: string): string => {
+        const lower = (name || '').toLowerCase();
+        if (lower.includes('thought leadership') || lower.includes('industry insight') || lower.includes('trend')) return 'THOUGHT_LEADERSHIP';
+        if (lower.includes('case stud') || lower.includes('social proof') || lower.includes('client proof') || lower.includes('customer win')) return 'SOCIAL_PROOF';
+        if (lower.includes('behind the scene') || lower.includes('culture') || lower.includes('philosophy')) return 'CULTURE';
+        if (lower.includes('how-to') || lower.includes('framework') || lower.includes('actionable') || lower.includes('tutorial')) return 'HOW_TO';
+        return lower.trim();
+      };
+
       const seenPillarsByBrand = new Set<string>();
       const duplicatePillarIds: string[] = [];
 
       for (const pil of allPillars) {
-        const key = `${pil.brandId}_${pil.name.trim().toLowerCase()}`;
+        const key = `${pil.brandId}_${getPillarCategory(pil.name)}`;
         if (seenPillarsByBrand.has(key)) {
           duplicatePillarIds.push(pil.id);
         } else {
@@ -538,6 +547,69 @@ export class DbSyncService {
           });
         }
       }
+
+      // 8. Auto-Purge QA Test Org / qa@test.com created during automated registration testing (N2)
+      const testTenants = await prisma.tenant.findMany({
+        where: {
+          OR: [
+            { name: { contains: 'QA Test', mode: 'insensitive' } },
+            { slug: { contains: 'qa-test', mode: 'insensitive' } }
+          ]
+        }
+      });
+
+      for (const tt of testTenants) {
+        console.log(`🧹 [DbSync] Purging QA test tenant: ${tt.name} (${tt.id})`);
+        const bizs = await prisma.business.findMany({ where: { tenantId: tt.id }, select: { id: true } });
+        const bizIds = bizs.map(b => b.id);
+        const brs = await prisma.brand.findMany({ where: { businessId: { in: bizIds } }, select: { id: true } });
+        const brIds = brs.map(b => b.id);
+        const cnts = await prisma.content.findMany({ where: { brandId: { in: brIds } }, select: { id: true } });
+        const cntIds = cnts.map(c => c.id);
+
+        if (cntIds.length > 0) {
+          await prisma.publication.deleteMany({ where: { contentId: { in: cntIds } } });
+          await prisma.contentVersion.deleteMany({ where: { contentId: { in: cntIds } } });
+          await prisma.content.deleteMany({ where: { id: { in: cntIds } } });
+        }
+
+        if (brIds.length > 0) {
+          await prisma.contentPillar.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.contentIdea.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.marketingStrategy.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.campaign.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.mediaAsset.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.contentRequest.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.launchpadProgress.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.leadFunnel.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.clientShareToken.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.brandVoiceProfile.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.socialAccount.deleteMany({ where: { brandId: { in: brIds } } });
+          await prisma.brand.deleteMany({ where: { id: { in: brIds } } });
+        }
+
+        if (bizIds.length > 0) {
+          await prisma.business.deleteMany({ where: { id: { in: bizIds } } });
+        }
+
+        await prisma.user.deleteMany({
+          where: {
+            OR: [
+              { tenantId: tt.id },
+              { email: 'qa@test.com' }
+            ]
+          }
+        });
+
+        await prisma.auditEvent.deleteMany({ where: { tenantId: tt.id } });
+        await prisma.teamInvitation.deleteMany({ where: { tenantId: tt.id } });
+        await prisma.aiUsageLog.deleteMany({ where: { tenantId: tt.id } });
+        await prisma.analyticsMetric.deleteMany({ where: { tenantId: tt.id } });
+        await prisma.tenant.delete({ where: { id: tt.id } });
+      }
+
+      // Also clean up any orphan user with email qa@test.com
+      await prisma.user.deleteMany({ where: { email: 'qa@test.com' } });
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

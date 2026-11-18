@@ -49,6 +49,13 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       }
     }
 
+    // Filter out rejected or draft content from calendar view
+    whereClause.content = {
+      ...(whereClause.content || {}),
+      clientApprovalStatus: { not: 'REJECTED' },
+      status: { not: 'DRAFT' }
+    };
+
     const publications = await prisma.publication.findMany({
       where: whereClause,
       include: {
@@ -108,7 +115,8 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
           tenantId: req.user?.tenantId!
         }
       },
-      status: 'SCHEDULED'
+      status: 'SCHEDULED',
+      clientApprovalStatus: { not: 'REJECTED' }
     };
     if (brandId && typeof brandId === 'string') {
       standaloneContentWhere.brandId = brandId;
@@ -207,7 +215,7 @@ router.post('/reschedule', requirePermission('SCHEDULE_POSTS'), async (req: Auth
       return;
     }
 
-    const pub = await prisma.publication.findFirst({
+    let pub = await prisma.publication.findFirst({
       where: {
         id: publicationId,
         content: {
@@ -220,7 +228,75 @@ router.post('/reschedule', requirePermission('SCHEDULE_POSTS'), async (req: Auth
       }
     });
 
+    const cleanId = typeof publicationId === 'string' && publicationId.startsWith('standalone_')
+      ? publicationId.replace('standalone_', '')
+      : publicationId;
+
     if (!pub) {
+      // Fallback 1: check if publicationId is a contentId with an existing publication
+      pub = await prisma.publication.findFirst({
+        where: {
+          contentId: cleanId,
+          content: {
+            brand: {
+              business: {
+                tenantId: req.user?.tenantId!
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (!pub) {
+      // Fallback 2: Standalone Content record that hasn't spawned a publication yet
+      const contentRec = await prisma.content.findFirst({
+        where: {
+          id: cleanId,
+          brand: {
+            business: {
+              tenantId: req.user?.tenantId!
+            }
+          }
+        }
+      });
+
+      if (contentRec) {
+        await prisma.content.update({
+          where: { id: contentRec.id },
+          data: {
+            status: 'SCHEDULED',
+            createdAt: scheduledDate,
+            updatedAt: new Date()
+          }
+        });
+
+        await AuditService.record({
+          tenantId: req.user?.tenantId,
+          userId: req.user?.id,
+          action: 'POST_RESCHEDULED',
+          entityType: 'Content',
+          entityId: contentRec.id,
+          details: {
+            contentId: contentRec.id,
+            newDate: scheduledDate.toISOString(),
+            status: 'QUEUED'
+          }
+        });
+
+        res.json({
+          success: true,
+          message: 'Publication rescheduled successfully',
+          publication: {
+            id: `standalone_${contentRec.id}`,
+            contentId: contentRec.id,
+            scheduledFor: scheduledDate,
+            status: 'QUEUED'
+          }
+        });
+        return;
+      }
+
       res.status(404).json({ error: 'Publication record not found or not owned by your organization' });
       return;
     }

@@ -547,7 +547,14 @@ router.get('/export', requirePermission('EXPORT_DATA'), async (req: AuthRequest,
 // Feature 3B: 1-Click Executive AI Client Performance Report (PDF Export)
 router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId, period = 'month', download } = req.query;
+    let { brandId, period = 'month', download } = req.query;
+
+    if (!brandId || typeof brandId !== 'string') {
+      const fallbackBrand = await prisma.brand.findFirst({
+        where: req.user?.tenantId ? { business: { tenantId: req.user.tenantId } } : undefined
+      });
+      brandId = fallbackBrand?.id;
+    }
 
     if (!brandId || typeof brandId !== 'string') {
       res.status(400).json({ error: 'brandId query parameter is required' });
@@ -582,5 +589,51 @@ router.get('/client-report-pdf', async (req: AuthRequest, res: Response): Promis
     res.status(500).json({ error: err.message || 'Failed to generate client report PDF' });
   }
 });
+
+// Feature 3C: POST /client-report and POST /client-report-pdf (N8 Report Builder PDF Export)
+const handlePostClientReport = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    let { brandId, days, period } = req.body || {};
+
+    if (!brandId) {
+      const fallbackBrand = await prisma.brand.findFirst({
+        where: req.user?.tenantId ? { business: { tenantId: req.user.tenantId } } : undefined
+      });
+      brandId = fallbackBrand?.id;
+    }
+
+    if (!brandId) {
+      res.status(400).json({ error: 'brandId is required to generate client report' });
+      return;
+    }
+
+    const calcPeriod: 'week' | 'month' = period || (Number(days) <= 7 ? 'week' : 'month');
+
+    const host = req.get('host') || 'localhost:5000';
+    let protocol = req.protocol || 'http';
+    if (host.includes('onrender.com') || req.headers['x-forwarded-proto'] === 'https') {
+      protocol = 'https';
+    }
+
+    const report = await ClientReportService.generateClientReportPdf(
+      brandId,
+      req.user?.tenantId!,
+      host,
+      protocol,
+      calcPeriod
+    );
+
+    res.json({
+      success: true,
+      report
+    });
+  } catch (err: any) {
+    console.error('Client report generation error:', err);
+    res.status(500).json({ error: err.message || 'Failed to generate client report' });
+  }
+};
+
+router.post('/client-report', handlePostClientReport);
+router.post('/client-report-pdf', handlePostClientReport);
 
 export default router;

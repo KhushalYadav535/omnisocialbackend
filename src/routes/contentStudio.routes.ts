@@ -403,10 +403,10 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
       res.json({
         success: true,
         data: [
-          'Proprietary AI orchestration delivering 3x faster content cycles',
-          'Audited multi-channel attribution and direct conversion pipeline',
-          'Sovereign enterprise infrastructure with zero third-party platform lock-in',
-          'Proven domain mastery across high-trust enterprise and technology sectors'
+          'Predictive virality scoring benchmarked against top 1% high-performing industry assets',
+          'Real-time omnichannel sentiment radar and automated crisis mitigation engine',
+          'High-conversion executive thought-leadership blueprints with verified pipeline attribution',
+          'Dedicated agency creative atelier with sub-hour creative revisions & native format testing'
         ]
       });
       return;
@@ -1288,9 +1288,23 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
       where: { id },
       data: {
         clientApprovalStatus: decision,
-        clientFeedback: feedback || null
+        clientFeedback: feedback || null,
+        ...(decision === 'REJECTED' ? { status: 'DRAFT' } : decision === 'APPROVED' ? { status: 'SCHEDULED' } : {})
       }
     });
+
+    if (decision === 'REJECTED') {
+      // Remove from calendar and publication queue immediately
+      await prisma.publication.deleteMany({
+        where: { contentId: id }
+      });
+    } else if (decision === 'APPROVED') {
+      // Ensure publications are queued for publication
+      await prisma.publication.updateMany({
+        where: { contentId: id, status: { in: ['DRAFT', 'CANCELLED'] } },
+        data: { status: 'QUEUED' }
+      });
+    }
 
     res.json({ success: true, content: updated });
   } catch (err: any) {

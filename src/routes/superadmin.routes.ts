@@ -188,6 +188,75 @@ router.patch('/tenants/:id/status', async (req: AuthRequest, res: Response): Pro
   }
 });
 
+// 3B. Delete Tenant & Cascade Purge Subordinate Resources (N2)
+router.delete('/tenants/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id }
+    });
+
+    if (!tenant) {
+      res.status(404).json({ error: 'Tenant not found' });
+      return;
+    }
+
+    const bizs = await prisma.business.findMany({ where: { tenantId: id }, select: { id: true } });
+    const bizIds = bizs.map(b => b.id);
+    const brs = await prisma.brand.findMany({ where: { businessId: { in: bizIds } }, select: { id: true } });
+    const brIds = brs.map(b => b.id);
+    const cnts = await prisma.content.findMany({ where: { brandId: { in: brIds } }, select: { id: true } });
+    const cntIds = cnts.map(c => c.id);
+
+    if (cntIds.length > 0) {
+      await prisma.publication.deleteMany({ where: { contentId: { in: cntIds } } });
+      await prisma.contentVersion.deleteMany({ where: { contentId: { in: cntIds } } });
+      await prisma.content.deleteMany({ where: { id: { in: cntIds } } });
+    }
+
+    if (brIds.length > 0) {
+      await prisma.contentPillar.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.contentIdea.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.marketingStrategy.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.campaign.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.mediaAsset.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.contentRequest.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.launchpadProgress.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.leadFunnel.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.clientShareToken.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.brandVoiceProfile.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.socialAccount.deleteMany({ where: { brandId: { in: brIds } } });
+      await prisma.brand.deleteMany({ where: { id: { in: brIds } } });
+    }
+
+    if (bizIds.length > 0) {
+      await prisma.business.deleteMany({ where: { id: { in: bizIds } } });
+    }
+
+    await prisma.user.deleteMany({ where: { tenantId: id } });
+    await prisma.auditEvent.deleteMany({ where: { tenantId: id } });
+    await prisma.teamInvitation.deleteMany({ where: { tenantId: id } });
+    await prisma.aiUsageLog.deleteMany({ where: { tenantId: id } });
+    await prisma.analyticsMetric.deleteMany({ where: { tenantId: id } });
+    await prisma.tenant.delete({ where: { id } });
+
+    await AuditService.record({
+      userId: req.user?.id,
+      action: 'SUPER_ADMIN_DELETED_TENANT',
+      entityType: 'Tenant',
+      entityId: id,
+      details: { name: tenant.name, slug: tenant.slug }
+    });
+
+    res.json({ success: true, message: `Tenant "${tenant.name}" deleted successfully` });
+  } catch (err: any) {
+    console.error('Superadmin delete tenant error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete tenant' });
+  }
+});
+
 // 4. Subscription Plans Management
 router.get('/plans', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
