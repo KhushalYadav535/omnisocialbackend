@@ -96,7 +96,24 @@ router.get('/brands', async (req: AuthRequest, res: Response): Promise<void> => 
       orderBy: { createdAt: 'desc' }
     });
 
-    const enrichedBrands = brands.map(brand => ({
+    // Deduplicate brands by normalized name and prioritize 'Apex Digital' / primary brand first
+    const sorted = [...brands].sort((a, b) => {
+      const aIsApex = /apex/i.test(a.name) ? -1 : 1;
+      const bIsApex = /apex/i.test(b.name) ? -1 : 1;
+      return aIsApex - bIsApex;
+    });
+
+    const seenBrandNames = new Set<string>();
+    const uniqueBrands = [];
+    for (const b of sorted) {
+      const key = b.name.trim().toLowerCase();
+      if (!seenBrandNames.has(key)) {
+        seenBrandNames.add(key);
+        uniqueBrands.push(b);
+      }
+    }
+
+    const enrichedBrands = uniqueBrands.map(brand => ({
       id: brand.id,
       businessId: brand.businessId,
       name: brand.name,

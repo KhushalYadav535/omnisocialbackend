@@ -278,20 +278,38 @@ Generate the structured deliverable for this skill now.`;
         }
       }
 
-      // 4B. Pillar Deliverable -> ContentPillar table
+      // 4B. Pillar Deliverable -> ContentPillar table (Safe upsert with deduplication)
       if ((skill.id === 'content_pillars' || skill.id.includes('pillar')) && Array.isArray(parsedOutput?.pillars)) {
         try {
           for (const p of parsedOutput.pillars) {
             if (p.name) {
-              await prisma.contentPillar.create({
-                data: {
+              const trimmedName = p.name.trim();
+              const existingPillar = await prisma.contentPillar.findFirst({
+                where: {
                   brandId: params.brandId,
-                  name: p.name,
-                  description: p.description || '',
-                  targetPercentage: p.targetPercentage || p.percentage || 25,
-                  subThemes: JSON.stringify(p.subThemes || [])
+                  name: { equals: trimmedName, mode: 'insensitive' }
                 }
               });
+
+              if (existingPillar) {
+                await prisma.contentPillar.update({
+                  where: { id: existingPillar.id },
+                  data: {
+                    description: p.description || existingPillar.description,
+                    targetPercentage: p.targetPercentage || p.percentage || existingPillar.targetPercentage
+                  }
+                });
+              } else {
+                await prisma.contentPillar.create({
+                  data: {
+                    brandId: params.brandId,
+                    name: trimmedName,
+                    description: p.description || '',
+                    targetPercentage: p.targetPercentage || p.percentage || 25,
+                    subThemes: JSON.stringify(p.subThemes || [])
+                  }
+                });
+              }
             }
           }
         } catch (pillarErr: any) {
@@ -299,22 +317,31 @@ Generate the structured deliverable for this skill now.`;
         }
       }
 
-      // 4C. Ideas Deliverable -> ContentIdea table
+      // 4C. Ideas Deliverable -> ContentIdea table (Safe upsert with deduplication)
       if ((skill.id === 'ideas_intake' || skill.id.includes('idea')) && Array.isArray(parsedOutput?.ideas)) {
         try {
           for (const idea of parsedOutput.ideas) {
             if (idea.title) {
-              await prisma.contentIdea.create({
-                data: {
+              const trimmedTitle = idea.title.trim();
+              const existingIdea = await prisma.contentIdea.findFirst({
+                where: {
                   brandId: params.brandId,
-                  title: idea.title,
-                  hook: idea.hook || idea.title,
-                  concept: idea.concept || idea.description || '',
-                  format: idea.format || 'POST',
-                  status: 'BACKLOG',
-                  source: 'AI_ORCHESTRATOR'
+                  title: { equals: trimmedTitle, mode: 'insensitive' }
                 }
               });
+
+              if (!existingIdea) {
+                await prisma.contentIdea.create({
+                  data: {
+                    brandId: params.brandId,
+                    title: trimmedTitle,
+                    description: idea.concept || idea.description || idea.hook || '',
+                    source: 'AI_ORCHESTRATOR',
+                    status: 'NEW',
+                    tags: JSON.stringify(idea.tags || [idea.format || 'POST'])
+                  }
+                });
+              }
             }
           }
         } catch (ideaErr: any) {

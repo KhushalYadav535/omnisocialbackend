@@ -437,6 +437,107 @@ export class DbSyncService {
           ]
         }
       });
+
+      // 5. Deduplicate duplicate ContentPillars and rebalance to exactly 100%
+      const allPillars = await prisma.contentPillar.findMany({
+        orderBy: { createdAt: 'asc' }
+      });
+      const seenPillarsByBrand = new Set<string>();
+      const duplicatePillarIds: string[] = [];
+
+      for (const pil of allPillars) {
+        const key = `${pil.brandId}_${pil.name.trim().toLowerCase()}`;
+        if (seenPillarsByBrand.has(key)) {
+          duplicatePillarIds.push(pil.id);
+        } else {
+          seenPillarsByBrand.add(key);
+        }
+      }
+
+      if (duplicatePillarIds.length > 0) {
+        await prisma.content.updateMany({
+          where: { pillarId: { in: duplicatePillarIds } },
+          data: { pillarId: null }
+        });
+        await prisma.contentPillar.deleteMany({
+          where: { id: { in: duplicatePillarIds } }
+        });
+      }
+
+      // Rebalance remaining pillars per brand so sum === 100%
+      const brandIdsWithPillars = [...new Set(allPillars.map(p => p.brandId))];
+      for (const bId of brandIdsWithPillars) {
+        const remaining = await prisma.contentPillar.findMany({
+          where: { brandId: bId },
+          orderBy: { createdAt: 'asc' }
+        });
+        if (remaining.length > 0) {
+          const share = Math.floor(100 / remaining.length);
+          const remainder = 100 - (share * remaining.length);
+          for (let i = 0; i < remaining.length; i++) {
+            await prisma.contentPillar.update({
+              where: { id: remaining[i].id },
+              data: { targetPercentage: share + (i === 0 ? remainder : 0) }
+            });
+          }
+        }
+      }
+
+      // 6. Deduplicate ContentIdeas by normalized title
+      const allIdeas = await prisma.contentIdea.findMany({
+        orderBy: { createdAt: 'asc' }
+      });
+      const seenIdeaKeys = new Set<string>();
+      const duplicateIdeaIds: string[] = [];
+      for (const idea of allIdeas) {
+        const key = `${idea.brandId}_${idea.title.trim().toLowerCase()}`;
+        if (seenIdeaKeys.has(key)) {
+          duplicateIdeaIds.push(idea.id);
+        } else {
+          seenIdeaKeys.add(key);
+        }
+      }
+      if (duplicateIdeaIds.length > 0) {
+        await prisma.contentIdea.deleteMany({
+          where: { id: { in: duplicateIdeaIds } }
+        });
+      }
+
+      // 7. Deduplicate duplicate Brand records by normalized name
+      const allBrands = await prisma.brand.findMany({
+        orderBy: { createdAt: 'asc' }
+      });
+      const seenBrandNames = new Set<string>();
+      const duplicateBrandIds: string[] = [];
+      for (const b of allBrands) {
+        const key = b.name.trim().toLowerCase();
+        if (seenBrandNames.has(key)) {
+          duplicateBrandIds.push(b.id);
+        } else {
+          seenBrandNames.add(key);
+        }
+      }
+      if (duplicateBrandIds.length > 0) {
+        // Reassign contents and strategies to primary brand before deletion
+        const primaryApex = allBrands.find(b => /apex/i.test(b.name));
+        if (primaryApex) {
+          await prisma.content.updateMany({
+            where: { brandId: { in: duplicateBrandIds } },
+            data: { brandId: primaryApex.id }
+          });
+          await prisma.marketingStrategy.updateMany({
+            where: { brandId: { in: duplicateBrandIds } },
+            data: { brandId: primaryApex.id }
+          });
+          await prisma.contentPillar.updateMany({
+            where: { brandId: { in: duplicateBrandIds } },
+            data: { brandId: primaryApex.id }
+          });
+          await prisma.brand.deleteMany({
+            where: { id: { in: duplicateBrandIds } }
+          });
+        }
+      }
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

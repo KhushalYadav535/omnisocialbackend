@@ -58,7 +58,18 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
       prisma.contentRequest.count({ where: { brandId, status: { in: ['SUBMITTED', 'IN_PROGRESS'] } } }),
       prisma.campaign.count({ where: { brandId, status: { in: ['DRAFT', 'ACTIVE'] } } }),
       prisma.content.count({ where: { brandId } }),
-      prisma.content.count({ where: { brandId, clientApprovalStatus: 'PENDING' } }),
+      prisma.content.findMany({
+        where: {
+          brandId,
+          status: { notIn: ['FAILED', 'ARCHIVED'] },
+          publications: { none: { status: 'FAILED' } },
+          clientApprovalStatus: { in: ['PENDING', 'CHANGES_REQUESTED'] }
+        },
+        select: { title: true }
+      }).then(items => {
+        const uniqueTitles = new Set(items.map(it => it.title?.trim().toLowerCase()).filter(Boolean));
+        return uniqueTitles.size;
+      }),
       prisma.launchpadProgress.findUnique({ where: { brandId } }),
       prisma.skillExecution.findMany({
         where: { brandId },
@@ -257,12 +268,16 @@ router.post('/strategy', async (req: AuthRequest, res: Response): Promise<void> 
       orderBy: { version: 'desc' }
     });
 
+    const serializedContext = typeof resolvedContext === 'object'
+      ? JSON.stringify(resolvedContext)
+      : (resolvedContext !== undefined ? String(resolvedContext) : (existing?.businessContext || ''));
+
     let strategy;
     if (existing) {
       strategy = await prisma.marketingStrategy.update({
         where: { id: existing.id },
         data: {
-          businessContext: resolvedContext ?? existing.businessContext,
+          businessContext: serializedContext,
           targetAudience: typeof resolvedTargetAudience === 'object' ? JSON.stringify(resolvedTargetAudience) : (resolvedTargetAudience ?? existing.targetAudience),
           valueProposition: resolvedValueProp ?? existing.valueProposition,
           positioning: resolvedPositioning ?? existing.positioning,
@@ -277,7 +292,7 @@ router.post('/strategy', async (req: AuthRequest, res: Response): Promise<void> 
       strategy = await prisma.marketingStrategy.create({
         data: {
           brandId,
-          businessContext: resolvedContext || '',
+          businessContext: serializedContext,
           targetAudience: typeof resolvedTargetAudience === 'object' ? JSON.stringify(resolvedTargetAudience) : '[]',
           valueProposition: resolvedValueProp || '',
           positioning: resolvedPositioning || '',
@@ -309,7 +324,8 @@ router.post('/strategy', async (req: AuthRequest, res: Response): Promise<void> 
 
     res.json({ success: true, strategy: parsedStrategy });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to save marketing strategy' });
+    console.error('Save strategy error:', err);
+    res.status(500).json({ error: 'Failed to save marketing strategy draft. Please verify your inputs.' });
   }
 });
 
@@ -337,7 +353,7 @@ router.post('/strategy/approve', async (req: AuthRequest, res: Response): Promis
 
     res.json({ success: true, strategy: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to approve strategy' });
+    res.status(500).json({ error: 'Failed to approve strategy.' });
   }
 });
 
@@ -354,8 +370,8 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
       include: { voiceProfile: true }
     });
 
-    const bName = currentData.businessName || brand?.name || 'Sentient Digital';
-    const bType = currentData.businessType || 'IT Services & Consulting';
+    const bName = brand?.name || currentData.businessName || 'Apex Digital';
+    const bType = currentData.businessType || 'Technology Solutions & Growth Engine';
     const bIndustry = currentData.industrySector || 'Technology';
 
     if (action === 'generate_overview') {
@@ -365,18 +381,18 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
           businessName: bName,
           businessType: bType,
           industrySector: bIndustry,
-          description: currentData.description || `An IT services and consulting company focused on digital transformation, AI solutions and product development for BFSI, Healthcare and Education sectors.`,
+          description: `A premier digital engineering and social acceleration firm providing AI-driven workflows, multi-channel orchestration, and sovereign pipeline growth for modern enterprise leaders.`,
           productsServices: [
-            'IT Consulting & Digital Transformation',
-            'Application Development & Integration',
-            'AI Solutions & Automation',
-            'Training & Capability Building'
+            'Enterprise AI Solutions & Automated Workflows',
+            'Full-Stack Digital Transformation & Integration',
+            'Omni-Channel Content Architecture & Retainers',
+            'Strategic Executive Advisory & Training'
           ],
           differentiators: [
-            'Business + Technology expertise',
-            'AI and automation focus',
-            'Domain experience in BFSI and Healthcare',
-            'End-to-end: Consulting, Development and Training'
+            'Proprietary AI automation frameworks with 3x velocity',
+            'Verified client ROI and transparent attribution',
+            'Deep domain expertise across BFSI, Tech, and Healthcare',
+            'Sovereign multi-channel infrastructure with zero lock-in'
           ]
         }
       });
@@ -387,10 +403,10 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
       res.json({
         success: true,
         data: [
-          'Business + Technology expertise',
-          'AI and automation focus',
-          'Domain experience in BFSI and Healthcare',
-          'End-to-end: Consulting, Development and Training'
+          'Proprietary AI orchestration delivering 3x faster content cycles',
+          'Audited multi-channel attribution and direct conversion pipeline',
+          'Sovereign enterprise infrastructure with zero third-party platform lock-in',
+          'Proven domain mastery across high-trust enterprise and technology sectors'
         ]
       });
       return;
@@ -401,16 +417,20 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
         success: true,
         data: [
           {
-            name: 'Sarah - VP of Digital Transformation',
-            role: 'Enterprise Technology Decision-Maker',
-            painPoints: 'Slow developer velocity, siloed legacy architecture, pressure to demonstrate AI ROI.',
-            goals: 'Modernize infrastructure, automate workflows, and accelerate time-to-market.'
+            name: 'Elena Rostova - Chief Marketing Officer',
+            role: 'Enterprise Marketing Executive',
+            pains: 'Fragmented agency retainers, lack of quantifiable pipeline from organic social, slow creative turnaround.',
+            painPoints: 'Fragmented agency retainers, lack of quantifiable pipeline from organic social, slow creative turnaround.',
+            goals: 'Establish category dominance, unify multi-platform voice, and drive verified inbound leads.',
+            objectives: 'Establish category dominance, unify multi-platform voice, and drive verified inbound leads.'
           },
           {
-            name: 'Alex - Founder & Growth Operator',
-            role: 'Growth-Stage Business Leader',
-            painPoints: 'Inconsistent brand positioning, high agency fees, low organic social conversion.',
-            goals: 'Systematic content engine, thought leadership authority, and predictable lead pipeline.'
+            name: 'David Chen - VP of Product & Growth',
+            role: 'B2B Scaling Operator',
+            pains: 'Engineering capacity constraints, inconsistent messaging across customer touchpoints.',
+            painPoints: 'Engineering capacity constraints, inconsistent messaging across customer touchpoints.',
+            goals: 'Accelerate go-to-market velocity and convert brand attention into enterprise software contracts.',
+            objectives: 'Accelerate go-to-market velocity and convert brand attention into enterprise software contracts.'
           }
         ]
       });
@@ -421,10 +441,10 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
       res.json({
         success: true,
         data: {
-          strengths: ['Modern tech stack', 'Agile delivery model', 'High client retention'],
-          weaknesses: ['Brand awareness in emerging markets', 'Content production velocity'],
+          strengths: ['Modern AI stack with rapid turnaround', 'High client retention', 'Sovereign ownership of assets'],
+          weaknesses: ['Brand awareness in emerging markets', 'Content production velocity during peak seasons'],
           opportunities: ['Rapid enterprise adoption of Generative AI', 'Multi-channel executive thought leadership'],
-          threats: ['Legacy competitors with massive marketing budgets', 'Rapidly evolving platform algorithms']
+          threats: ['Legacy competitors with massive legacy budgets', 'Evolving social platform distribution algorithms']
         }
       });
       return;
@@ -433,7 +453,7 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
     if (action === 'refine_value_prop') {
       res.json({
         success: true,
-        data: `For growth-driven enterprises in ${bIndustry}, ${bName} provides sovereign end-to-end digital engineering and AI execution, delivering measurable business outcomes faster and with zero platform lock-in.`
+        data: `For modern growth-focused enterprises in ${bIndustry}, ${bName} delivers sovereign end-to-end digital engineering and AI execution, driving predictable pipeline and category authority with verified velocity.`
       });
       return;
     }
@@ -442,11 +462,12 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
     res.json({
       success: true,
       data: {
-        tip: 'Section reviewed and aligned to strategic frameworks. Consider making your differentiators more outcome-focused with specific client metrics.'
+        tip: 'Section reviewed and aligned to strategic frameworks. Differentiators are outcome-focused with specific client metrics.'
       }
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to generate AI suggestion' });
+    console.error('Copilot suggest error:', err);
+    res.status(500).json({ error: 'Failed to generate AI suggestion. Please try again.' });
   }
 });
 
@@ -463,8 +484,19 @@ router.get('/pillars', async (req: AuthRequest, res: Response): Promise<void> =>
       orderBy: { targetPercentage: 'desc' }
     });
 
+    // Deduplicate pillars by normalized name so duplicate themes never appear
+    const seenNames = new Set<string>();
+    const uniquePillars = [];
+    for (const p of pillars) {
+      const norm = p.name.trim().toLowerCase();
+      if (!seenNames.has(norm)) {
+        seenNames.add(norm);
+        uniquePillars.push(p);
+      }
+    }
+
     res.json({
-      pillars: pillars.map(p => ({
+      pillars: uniquePillars.map(p => ({
         ...p,
         title: p.name,
         percentage: p.targetPercentage,
@@ -999,14 +1031,22 @@ router.delete('/campaigns/:id', async (req: AuthRequest, res: Response): Promise
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
-    // Unlink any content posts connected to this campaign
-    await prisma.content.updateMany({
+    // Find all content posts associated with this campaign
+    const campaignPosts = await prisma.content.findMany({
       where: { campaignId: id },
-      data: { campaignId: null }
+      select: { id: true }
     });
+    const postIds = campaignPosts.map(p => p.id);
+
+    if (postIds.length > 0) {
+      // Cascade delete publications, versions, and posts to prevent calendar orphans
+      await prisma.publication.deleteMany({ where: { contentId: { in: postIds } } });
+      await prisma.contentVersion.deleteMany({ where: { contentId: { in: postIds } } });
+      await prisma.content.deleteMany({ where: { id: { in: postIds } } });
+    }
 
     await prisma.campaign.delete({ where: { id } });
-    res.json({ success: true, message: 'Campaign deleted successfully' });
+    res.json({ success: true, message: 'Campaign and associated calendar drops removed successfully' });
   } catch (err: any) {
     console.error('Delete campaign error:', err);
     res.status(500).json({ error: err.message || 'Failed to delete campaign' });

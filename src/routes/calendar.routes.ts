@@ -237,11 +237,6 @@ router.patch('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthR
       return;
     }
 
-    if (pub.status === 'PUBLISHED' || pub.status === 'PUBLISHING') {
-      res.status(400).json({ error: `Cannot edit content of a ${pub.status} post` });
-      return;
-    }
-
     const updatedContent = await prisma.content.update({
       where: { id: pub.contentId },
       data: {

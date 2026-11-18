@@ -132,14 +132,15 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
           status: 'QUEUED'
         }
       }),
-      // 3. Failed posts in window
-      prisma.publication.count({
+      // 3. Failed posts in window (deduplicated by distinct contentId to match calendar)
+      prisma.publication.findMany({
         where: {
           ...pubWhere,
           status: 'FAILED',
           updatedAt: { gte: parsedStart, lte: parsedEnd }
-        }
-      }),
+        },
+        select: { contentId: true }
+      }).then(pubs => new Set(pubs.map(p => p.contentId)).size),
       // 4. Total interactions
       prisma.interaction.count({ where: interactionWhere }),
       // 5. Unread interactions
