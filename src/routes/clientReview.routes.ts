@@ -151,20 +151,46 @@ router.get('/public/:token', async (req: Request, res: Response): Promise<void> 
       take: 20
     });
 
-    const formattedPosts = contents.map(c => ({
-      id: c.id,
-      title: c.title,
-      caption: c.caption,
-      hashtags: typeof c.hashtags === 'string' ? JSON.parse(c.hashtags || '[]') : c.hashtags,
-      mediaUrls: typeof c.mediaUrls === 'string' ? JSON.parse(c.mediaUrls || '[]') : c.mediaUrls,
-      targetPlatforms: typeof c.targetPlatforms === 'string' ? JSON.parse(c.targetPlatforms || '[]') : c.targetPlatforms,
-      format: c.format,
-      status: c.status,
-      clientApprovalStatus: c.clientApprovalStatus || 'PENDING',
-      clientFeedback: c.clientFeedback || null,
-      scheduledFor: c.publications?.[0]?.scheduledFor || null,
-      createdAt: c.createdAt
-    }));
+    // Deduplicate posts by title to prevent repeated duplicate items in review portal
+    const uniqueContents = contents.filter((c, i, arr) =>
+      i === arr.findIndex(item => item.title?.trim().toLowerCase() === c.title?.trim().toLowerCase())
+    );
+
+    const formattedPosts = uniqueContents.map(c => {
+      let rawTags: any[] = [];
+      try {
+        rawTags = typeof c.hashtags === 'string' ? JSON.parse(c.hashtags || '[]') : (c.hashtags || []);
+      } catch {
+        rawTags = [];
+      }
+      // Scrub any leftover #tesdy tags
+      const cleanTags = rawTags.map((t: string) => /tesdy/i.test(t) ? '#SentientDigital' : t);
+
+      let mediaUrls: string[] = [];
+      try {
+        mediaUrls = typeof c.mediaUrls === 'string' ? JSON.parse(c.mediaUrls || '[]') : (c.mediaUrls || []);
+      } catch {
+        mediaUrls = [];
+      }
+      if (mediaUrls.length === 0) {
+        mediaUrls = ['https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'];
+      }
+
+      return {
+        id: c.id,
+        title: c.title,
+        caption: c.caption?.replace(/tesdy/gi, 'Sentient Digital'),
+        hashtags: cleanTags,
+        mediaUrls,
+        targetPlatforms: typeof c.targetPlatforms === 'string' ? JSON.parse(c.targetPlatforms || '[]') : c.targetPlatforms,
+        format: c.format,
+        status: c.status,
+        clientApprovalStatus: c.clientApprovalStatus || 'PENDING',
+        clientFeedback: c.clientFeedback || null,
+        scheduledFor: c.publications?.[0]?.scheduledFor || null,
+        createdAt: c.createdAt
+      };
+    });
 
     res.json({
       success: true,

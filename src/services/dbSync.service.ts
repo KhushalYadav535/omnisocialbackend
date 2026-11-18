@@ -288,13 +288,24 @@ export class DbSyncService {
         data: { name: 'Apex Digital' }
       });
 
+      // 1. Comprehensive scrubbing of test keyword "tesdy" -> "Sentient Digital"
+      await prisma.brand.updateMany({
+        where: {
+          OR: [
+            { name: { in: ['tesdy', 'Tesdy', 'test', 'Test', 'tesdy-320'] } },
+            { name: { contains: 'tesdy', mode: 'insensitive' } }
+          ]
+        },
+        data: { name: 'Sentient Digital' }
+      });
+
       await prisma.brand.updateMany({
         where: {
           OR: [
             { slug: { contains: 'tesdy', mode: 'insensitive' } }
           ]
         },
-        data: { slug: 'apex-digital' }
+        data: { slug: 'sentient-digital' }
       });
 
       const profiles = await prisma.brandVoiceProfile.findMany();
@@ -302,40 +313,130 @@ export class DbSyncService {
         if (p.responseGuidelines && /tesdy/i.test(p.responseGuidelines)) {
           await prisma.brandVoiceProfile.update({
             where: { id: p.id },
-            data: { responseGuidelines: p.responseGuidelines.replace(/tesdy/gi, 'Apex Digital') }
+            data: { responseGuidelines: p.responseGuidelines.replace(/tesdy/gi, 'Sentient Digital') }
           });
         }
       }
 
-      // 2. Deduplicate duplicate Jordan Lee user rows
+      // Scrub "tesdy" from ContentPillars
+      const pillars = await prisma.contentPillar.findMany();
+      for (const pil of pillars) {
+        if (pil.description && /tesdy/i.test(pil.description)) {
+          await prisma.contentPillar.update({
+            where: { id: pil.id },
+            data: { description: pil.description.replace(/tesdy/gi, 'Sentient Digital') }
+          });
+        }
+      }
+
+      // Scrub "tesdy" from ContentIdeas
+      const ideas = await prisma.contentIdea.findMany();
+      for (const id of ideas) {
+        let changed = false;
+        let newTitle = id.title;
+        let newDesc = id.description;
+        if (newTitle && /tesdy/i.test(newTitle)) {
+          newTitle = newTitle.replace(/tesdy/gi, 'Sentient Digital');
+          changed = true;
+        }
+        if (newDesc && /tesdy/i.test(newDesc)) {
+          newDesc = newDesc.replace(/tesdy/gi, 'Sentient Digital');
+          changed = true;
+        }
+        if (changed) {
+          await prisma.contentIdea.update({
+            where: { id: id.id },
+            data: { title: newTitle, description: newDesc }
+          });
+        }
+      }
+
+      // Scrub "tesdy" from Contents & Review Portal hashtags
+      const contents = await prisma.content.findMany();
+      for (const c of contents) {
+        let changed = false;
+        let newTags = c.hashtags;
+        let newCaption = c.caption;
+        if (newTags && /tesdy/i.test(newTags)) {
+          newTags = newTags.replace(/#?tesdy/gi, '#SentientDigital');
+          changed = true;
+        }
+        if (newCaption && /tesdy/i.test(newCaption)) {
+          newCaption = newCaption.replace(/tesdy/gi, 'Sentient Digital');
+          changed = true;
+        }
+        if (changed) {
+          await prisma.content.update({
+            where: { id: c.id },
+            data: { hashtags: newTags, caption: newCaption }
+          });
+        }
+      }
+
+      // 2. Safe Deduplicate duplicate Jordan Lee user rows with foreign key re-assignment
       const jordanLees = await prisma.user.findMany({
         where: { name: 'Jordan Lee' },
         orderBy: { createdAt: 'asc' }
       });
       if (jordanLees.length > 1) {
-        const toDelete = jordanLees.slice(1).map(u => u.id);
+        const primaryUser = jordanLees[0];
+        const duplicateIds = jordanLees.slice(1).map(u => u.id);
+
+        // Reassign all foreign keys to primary user
+        await prisma.interaction.updateMany({
+          where: { assignedUserId: { in: duplicateIds } },
+          data: { assignedUserId: primaryUser.id }
+        });
+        await prisma.content.updateMany({
+          where: { createdByUserId: { in: duplicateIds } },
+          data: { createdByUserId: primaryUser.id }
+        });
+        await prisma.contentVersion.updateMany({
+          where: { editedByUserId: { in: duplicateIds } },
+          data: { editedByUserId: primaryUser.id }
+        });
+        await prisma.skillExecution.updateMany({
+          where: { userId: { in: duplicateIds } },
+          data: { userId: primaryUser.id }
+        });
+
         await prisma.user.deleteMany({
-          where: { id: { in: toDelete } }
+          where: { id: { in: duplicateIds } }
         });
       }
 
-      // 3. Deduplicate duplicate seeded posts
-      const duplicateTitles = [
-        'Provide 3 effortless ways to style linen blazers this season',
-        'Introduce our upcoming eco-friendly resort capsule'
-      ];
-      for (const title of duplicateTitles) {
-        const posts = await prisma.content.findMany({
-          where: { title: { contains: title } },
-          orderBy: { createdAt: 'asc' }
-        });
-        if (posts.length > 1) {
-          const duplicateIds = posts.slice(1).map(p => p.id);
-          await prisma.publication.deleteMany({ where: { contentId: { in: duplicateIds } } });
-          await prisma.contentVersion.deleteMany({ where: { contentId: { in: duplicateIds } } });
-          await prisma.content.deleteMany({ where: { id: { in: duplicateIds } } });
+      // 3. Deduplicate duplicate seeded posts by normalized title
+      const allPosts = await prisma.content.findMany({
+        orderBy: { createdAt: 'asc' }
+      });
+      const seenTitles = new Set<string>();
+      const duplicateIds: string[] = [];
+
+      for (const post of allPosts) {
+        const norm = (post.title || '').trim().toLowerCase();
+        if (!norm) continue;
+        if (seenTitles.has(norm)) {
+          duplicateIds.push(post.id);
+        } else {
+          seenTitles.add(norm);
         }
       }
+
+      if (duplicateIds.length > 0) {
+        await prisma.publication.deleteMany({ where: { contentId: { in: duplicateIds } } });
+        await prisma.contentVersion.deleteMany({ where: { contentId: { in: duplicateIds } } });
+        await prisma.content.deleteMany({ where: { id: { in: duplicateIds } } });
+      }
+
+      // 4. Remove leftover QA TEST Media Assets
+      await prisma.mediaAsset.deleteMany({
+        where: {
+          OR: [
+            { title: { contains: 'Beach Asset', mode: 'insensitive' } },
+            { title: { contains: 'QA TEST', mode: 'insensitive' } }
+          ]
+        }
+      });
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

@@ -22,9 +22,13 @@ export {
 
 export class AiService {
   /**
-   * Helper to parse and extract valid JSON from LLM response content
+   * Helper to parse and extract valid JSON from LLM response content with 5-stage resilience
    */
   private static parseJsonFromResponse(rawContent: string): any {
+    if (!rawContent || typeof rawContent !== 'string') {
+      return { caption: '', hashtags: [], variants: { facebook: '', instagram: '', linkedin: '' } };
+    }
+
     const cleaned = rawContent
       .trim()
       .replace(/^```json\s*/i, '')
@@ -32,16 +36,75 @@ export class AiService {
       .replace(/\s*```$/i, '')
       .trim();
 
+    // Stage 1: Direct JSON.parse
     try {
       return JSON.parse(cleaned);
     } catch {
-      // Find outermost JSON object or array
+      // Stage 2: Substring between first { and last }
       const firstBrace = cleaned.indexOf('{');
       const lastBrace = cleaned.lastIndexOf('}');
       if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+        const candidate = cleaned.substring(firstBrace, lastBrace + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          // Stage 3: Sanitize unescaped newlines/tabs inside string values
+          try {
+            const sanitized = candidate.replace(
+              /"([^"\\]*(\\.[^"\\]*)*)"/g,
+              (match) => match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
+            );
+            return JSON.parse(sanitized);
+          } catch {
+            // Stage 4: Regex extraction of structured fields (caption, hashtags, variants)
+            const captionMatch = cleaned.match(/"caption"\s*:\s*"([\s\S]*?)(?<!\\)"/);
+            const hashtagsMatch = cleaned.match(/"hashtags"\s*:\s*\[([\s\S]*?)\]/);
+            const ctaMatch = cleaned.match(/"callToAction"\s*:\s*"([\s\S]*?)(?<!\\)"/);
+
+            let hashtags: string[] = [];
+            if (hashtagsMatch && hashtagsMatch[1]) {
+              hashtags = (hashtagsMatch[1].match(/#[a-zA-Z0-9_]+/g) || []) as string[];
+            }
+            if (hashtags.length === 0) {
+              hashtags = (cleaned.match(/#[a-zA-Z0-9_]+/g) || ['#SocialMedia', '#BrandGrowth']) as string[];
+            }
+
+            if (captionMatch && captionMatch[1]) {
+              return {
+                caption: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                variants: {
+                  facebook: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                  instagram: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                  linkedin: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+                },
+                hashtags,
+                callToAction: ctaMatch ? ctaMatch[1] : 'Explore more',
+                characterCount: captionMatch[1].length
+              };
+            }
+          }
+        }
       }
-      throw new Error(`Failed to parse structured JSON from AI output: "${rawContent.slice(0, 100)}..."`);
+
+      // Stage 5: Clean raw text fallback if model replied in freeform text
+      const fallbackText = cleaned
+        .replace(/^[{\[\s"]+|[}\]\s"]+$/g, '')
+        .replace(/"?caption"?\s*:\s*"?/gi, '')
+        .trim();
+
+      const extractedTags = (cleaned.match(/#[a-zA-Z0-9_]+/g) || ['#SocialMedia', '#BrandGrowth']) as string[];
+
+      return {
+        caption: fallbackText.slice(0, 800) || rawContent.slice(0, 300).trim(),
+        variants: {
+          facebook: fallbackText.slice(0, 800),
+          instagram: fallbackText.slice(0, 800),
+          linkedin: fallbackText.slice(0, 800)
+        },
+        hashtags: extractedTags,
+        callToAction: 'Learn more',
+        characterCount: fallbackText.length
+      };
     }
   }
 

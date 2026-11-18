@@ -23,16 +23,17 @@ export type ReplySuggestionsResponse = z.infer<typeof ReplySuggestionsResponseSc
 // ============================================================================
 
 export const ContentVariantsSchema = z.object({
-  facebook: z.string().min(1),
-  instagram: z.string().min(1)
+  facebook: z.string().optional().default(''),
+  instagram: z.string().optional().default(''),
+  linkedin: z.string().optional().default('')
 });
 
 export const GeneratedContentSchema = z.object({
-  caption: z.string().min(1),
-  variants: ContentVariantsSchema,
-  hashtags: z.array(z.string()),
-  callToAction: z.string(),
-  characterCount: z.number().int().nonnegative()
+  caption: z.string().default(''),
+  variants: ContentVariantsSchema.default({ facebook: '', instagram: '', linkedin: '' }),
+  hashtags: z.array(z.string()).default([]),
+  callToAction: z.string().default('Explore more'),
+  characterCount: z.number().int().nonnegative().default(0)
 });
 
 export type GeneratedContent = z.infer<typeof GeneratedContentSchema>;

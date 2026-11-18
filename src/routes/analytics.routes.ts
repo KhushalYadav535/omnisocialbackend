@@ -268,6 +268,11 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
       };
     });
 
+    // Deduplicate posts by title to prevent duplicate rows in analytics list
+    const uniqueBestPerformingPosts = bestPerformingPosts.filter((p, i, arr) =>
+      i === arr.findIndex(item => item.title?.trim().toLowerCase() === p.title?.trim().toLowerCase())
+    );
+
     // Meta Graph API Insights Check
     let metaInsights: any = {
       status: 'UNAVAILABLE',
@@ -321,7 +326,7 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
         instagram: igInteractions
       },
       dailyTrends,
-      bestPerformingPosts,
+      bestPerformingPosts: uniqueBestPerformingPosts,
       metaInsights
     });
   } catch (err: any) {

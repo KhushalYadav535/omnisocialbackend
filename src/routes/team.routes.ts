@@ -174,7 +174,15 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       orderBy: { createdAt: 'desc' }
     });
 
-    res.json({ team });
+    // Deduplicate team members by email / name to prevent duplicate rows
+    const uniqueTeam = team.filter((member, index, self) =>
+      index === self.findIndex(m =>
+        (m.email && member.email && m.email.toLowerCase() === member.email.toLowerCase()) ||
+        (m.name && member.name && m.name.toLowerCase() === member.name.toLowerCase())
+      )
+    );
+
+    res.json({ team: uniqueTeam });
   } catch (err: any) {
     console.error('List team error:', err);
     res.status(500).json({ error: err.message || 'Failed to list team members' });

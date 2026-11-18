@@ -236,7 +236,94 @@ Generate the structured deliverable for this skill now.`;
 
     const executionTimeMs = Date.now() - startTime;
 
-    // 4. Record SkillExecution in Database
+    // 4. Persist deliverables directly into Workspace Domain tables if applicable
+    if (parsedOutput && typeof parsedOutput === 'object') {
+      // 4A. Strategy Deliverable -> MarketingStrategy table
+      if (skill.id === 'brand_strategy' || skill.id.includes('strategy')) {
+        try {
+          const existingStrat = await prisma.marketingStrategy.findFirst({
+            where: { brandId: params.brandId },
+            orderBy: { version: 'desc' }
+          });
+
+          const stratData = {
+            brandId: params.brandId,
+            version: (existingStrat?.version || 0) + 1,
+            status: 'DRAFT',
+            positioning: parsedOutput?.positioning || parsedOutput?.positioningStatement || existingStrat?.positioning || 'Strategic Market Positioning',
+            valueProposition: parsedOutput?.valueProposition || existingStrat?.valueProposition || 'High-Impact Value Proposition',
+            targetPersonas: JSON.stringify(parsedOutput?.personas || parsedOutput?.targetPersonas || []),
+            coreMessaging: JSON.stringify(parsedOutput?.coreMessaging || parsedOutput?.keyMessages || []),
+            businessContext: JSON.stringify(parsedOutput?.businessContext || {
+              businessName: brand?.name || 'Sentient Digital',
+              description: brand?.description || ''
+            }),
+            marketingObjectives: JSON.stringify(parsedOutput?.objectives || parsedOutput?.marketingObjectives || []),
+            channelStrategy: JSON.stringify(parsedOutput?.channelStrategy || []),
+            channelRoadmap: JSON.stringify(parsedOutput?.roadmap || parsedOutput?.channelRoadmap || [])
+          };
+
+          if (existingStrat) {
+            await prisma.marketingStrategy.update({
+              where: { id: existingStrat.id },
+              data: stratData
+            });
+          } else {
+            await prisma.marketingStrategy.create({
+              data: stratData
+            });
+          }
+        } catch (stratErr: any) {
+          console.warn('[SkillOrchestrator] Strategy persistence note:', stratErr.message);
+        }
+      }
+
+      // 4B. Pillar Deliverable -> ContentPillar table
+      if ((skill.id === 'content_pillars' || skill.id.includes('pillar')) && Array.isArray(parsedOutput?.pillars)) {
+        try {
+          for (const p of parsedOutput.pillars) {
+            if (p.name) {
+              await prisma.contentPillar.create({
+                data: {
+                  brandId: params.brandId,
+                  name: p.name,
+                  description: p.description || '',
+                  targetPercentage: p.targetPercentage || p.percentage || 25,
+                  subThemes: JSON.stringify(p.subThemes || [])
+                }
+              });
+            }
+          }
+        } catch (pillarErr: any) {
+          console.warn('[SkillOrchestrator] Pillar persistence note:', pillarErr.message);
+        }
+      }
+
+      // 4C. Ideas Deliverable -> ContentIdea table
+      if ((skill.id === 'ideas_intake' || skill.id.includes('idea')) && Array.isArray(parsedOutput?.ideas)) {
+        try {
+          for (const idea of parsedOutput.ideas) {
+            if (idea.title) {
+              await prisma.contentIdea.create({
+                data: {
+                  brandId: params.brandId,
+                  title: idea.title,
+                  hook: idea.hook || idea.title,
+                  concept: idea.concept || idea.description || '',
+                  format: idea.format || 'POST',
+                  status: 'BACKLOG',
+                  source: 'AI_ORCHESTRATOR'
+                }
+              });
+            }
+          }
+        } catch (ideaErr: any) {
+          console.warn('[SkillOrchestrator] Idea persistence note:', ideaErr.message);
+        }
+      }
+    }
+
+    // 5. Record SkillExecution in Database
     const executionRecord = await prisma.skillExecution.create({
       data: {
         tenantId: params.tenantId,

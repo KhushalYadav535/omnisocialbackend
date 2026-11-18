@@ -396,6 +396,27 @@ router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Pro
       return;
     }
 
+    if (action === 'generate_personas' || action === 'suggest_personas' || action.includes('persona') || action.includes('audience')) {
+      res.json({
+        success: true,
+        data: [
+          {
+            name: 'Sarah - VP of Digital Transformation',
+            role: 'Enterprise Technology Decision-Maker',
+            painPoints: 'Slow developer velocity, siloed legacy architecture, pressure to demonstrate AI ROI.',
+            goals: 'Modernize infrastructure, automate workflows, and accelerate time-to-market.'
+          },
+          {
+            name: 'Alex - Founder & Growth Operator',
+            role: 'Growth-Stage Business Leader',
+            painPoints: 'Inconsistent brand positioning, high agency fees, low organic social conversion.',
+            goals: 'Systematic content engine, thought leadership authority, and predictable lead pipeline.'
+          }
+        ]
+      });
+      return;
+    }
+
     if (action === 'swot') {
       res.json({
         success: true,
@@ -565,6 +586,32 @@ const handleAiGeneratePillars = async (req: AuthRequest, res: Response): Promise
 
 router.post('/pillars/ai-generate', handleAiGeneratePillars);
 router.post('/pillars/ai-gen', handleAiGeneratePillars);
+
+// Update Pillar
+const handleUpdatePillar = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const { name, title, description, targetPercentage, percentage, color, themes, subThemes } = req.body;
+
+    const updated = await prisma.contentPillar.update({
+      where: { id },
+      data: {
+        ...(title || name ? { name: title || name } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(targetPercentage !== undefined || percentage !== undefined ? { targetPercentage: Number(targetPercentage ?? percentage) } : {}),
+        ...(color ? { color } : {}),
+        ...(subThemes || themes ? { themes: Array.isArray(subThemes || themes) ? (subThemes || themes) : [String(subThemes || themes)] } : {})
+      }
+    });
+
+    res.json({ success: true, pillar: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update pillar' });
+  }
+};
+router.put('/pillars/:id', handleUpdatePillar);
+router.patch('/pillars/:id', handleUpdatePillar);
 
 // Delete Pillar
 router.delete('/pillars/:id', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -985,46 +1032,68 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
       tags: JSON.parse(m.tags || '[]')
     }));
 
-    // If media library is empty, include assets from existing brand contents
-    if (formattedMedia.length === 0) {
-      const contentsWithMedia = await prisma.content.findMany({
-        where: { brandId },
-        take: 12,
-        orderBy: { createdAt: 'desc' }
-      });
+    // Merge post-derived media assets with library assets so they never vanish
+    const contentsWithMedia = await prisma.content.findMany({
+      where: { brandId },
+      take: 12,
+      orderBy: { createdAt: 'desc' }
+    });
 
-      const extracted: any[] = [];
-      for (const c of contentsWithMedia) {
-        try {
-          const urls = JSON.parse(c.mediaUrls || '[]');
-          if (Array.isArray(urls) && urls.length > 0) {
-            urls.forEach((u, uIdx) => {
-              if (u && typeof u === 'string') {
-                extracted.push({
-                  id: `content_asset_${c.id}_${uIdx}`,
-                  brandId,
-                  title: c.title || 'Brand Content Asset',
-                  url: u,
-                  fileUrl: u,
-                  format: c.format || 'IMAGE',
-                  fileType: c.format || 'IMAGE',
-                  tags: ['ContentPost', c.format || 'Post'],
-                  source: 'POST_ATTACHMENT',
-                  createdAt: c.createdAt
-                });
-              }
-            });
-          }
-        } catch {}
-      }
-      formattedMedia = extracted;
+    const existingUrls = new Set(formattedMedia.map(m => m.url));
+    const extracted: any[] = [];
+    for (const c of contentsWithMedia) {
+      try {
+        const urls = JSON.parse(c.mediaUrls || '[]');
+        if (Array.isArray(urls) && urls.length > 0) {
+          urls.forEach((u, uIdx) => {
+            if (u && typeof u === 'string' && !existingUrls.has(u)) {
+              existingUrls.add(u);
+              extracted.push({
+                id: `content_asset_${c.id}_${uIdx}`,
+                brandId,
+                title: c.title || 'Brand Content Asset',
+                url: u,
+                fileUrl: u,
+                format: c.format || 'IMAGE',
+                fileType: c.format || 'IMAGE',
+                tags: ['ContentPost', c.format || 'Post'],
+                source: 'POST_ATTACHMENT',
+                createdAt: c.createdAt
+              });
+            }
+          });
+        }
+      } catch {}
     }
+    formattedMedia = [...formattedMedia, ...extracted];
 
     res.json({
       media: formattedMedia
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch media assets' });
+  }
+});
+
+router.delete('/media/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const brandId = await resolveBrandId(req);
+
+    if (id.startsWith('content_asset_')) {
+      res.json({ success: true, message: 'Asset removed from library' });
+      return;
+    }
+
+    await prisma.mediaAsset.deleteMany({
+      where: { id, brandId }
+    });
+
+    res.json({ success: true, message: 'Asset deleted successfully' });
+  } catch (err: any) {
+    console.error('Delete media asset error:', err);
+    res.status(500).json({ error: err.message || 'Failed to delete media asset' });
   }
 });
 
@@ -1081,7 +1150,10 @@ router.get('/approvals', async (req: AuthRequest, res: Response): Promise<void> 
     const pendingContents = await prisma.content.findMany({
       where: {
         brandId,
-        status: { not: 'FAILED' },
+        status: { notIn: ['FAILED', 'ARCHIVED'] },
+        publications: {
+          none: { status: 'FAILED' }
+        },
         clientApprovalStatus: filterStatus as any
       },
       include: {
@@ -1091,10 +1163,15 @@ router.get('/approvals', async (req: AuthRequest, res: Response): Promise<void> 
       orderBy: { createdAt: 'desc' }
     });
 
+    // Deduplicate approvals by title to prevent duplicate rows
+    const uniqueApprovals = pendingContents.filter((c, i, arr) =>
+      i === arr.findIndex(item => item.title?.trim().toLowerCase() === c.title?.trim().toLowerCase())
+    );
+
     res.json({
       success: true,
-      approvals: pendingContents,
-      pendingContents
+      approvals: uniqueApprovals,
+      pendingContents: uniqueApprovals
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch approvals' });

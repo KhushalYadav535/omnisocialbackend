@@ -99,7 +99,16 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       };
     });
 
-    res.json({ events: calendarEvents });
+    // Deduplicate duplicate events by title + platform + scheduled date
+    const uniqueEvents = calendarEvents.filter((ev, index, self) =>
+      index === self.findIndex(item =>
+        item.title?.trim().toLowerCase() === ev.title?.trim().toLowerCase() &&
+        item.platform === ev.platform &&
+        new Date(item.scheduledFor).toDateString() === new Date(ev.scheduledFor).toDateString()
+      )
+    );
+
+    res.json({ events: uniqueEvents });
   } catch (err: any) {
     console.error('List calendar events error:', err);
     res.status(500).json({ error: err.message || 'Failed to list calendar events' });
