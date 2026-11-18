@@ -1299,11 +1299,24 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
         where: { contentId: id }
       });
     } else if (decision === 'APPROVED') {
-      // Ensure publications are queued for publication
-      await prisma.publication.updateMany({
-        where: { contentId: id, status: { in: ['DRAFT', 'CANCELLED'] } },
-        data: { status: 'QUEUED' }
-      });
+      const pubs = await prisma.publication.findMany({ where: { contentId: id } });
+      const now = new Date();
+      for (const pub of pubs) {
+        if (!pub.scheduledFor || pub.scheduledFor < now) {
+          const nextDay = new Date();
+          nextDay.setDate(nextDay.getDate() + 1);
+          nextDay.setHours(10, 0, 0, 0);
+          await prisma.publication.update({
+            where: { id: pub.id },
+            data: { scheduledFor: nextDay, status: 'QUEUED' }
+          });
+        } else {
+          await prisma.publication.update({
+            where: { id: pub.id },
+            data: { status: 'QUEUED' }
+          });
+        }
+      }
     }
 
     res.json({ success: true, content: updated });

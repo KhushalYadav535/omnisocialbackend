@@ -246,10 +246,24 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
     });
 
     if (action === 'APPROVE') {
-      await prisma.publication.updateMany({
-        where: { contentId, status: { in: ['DRAFT', 'CANCELLED'] } },
-        data: { status: 'QUEUED' }
-      });
+      const pubs = await prisma.publication.findMany({ where: { contentId } });
+      const now = new Date();
+      for (const pub of pubs) {
+        if (!pub.scheduledFor || pub.scheduledFor < now) {
+          const nextDay = new Date();
+          nextDay.setDate(nextDay.getDate() + 1);
+          nextDay.setHours(10, 0, 0, 0);
+          await prisma.publication.update({
+            where: { id: pub.id },
+            data: { scheduledFor: nextDay, status: 'QUEUED' }
+          });
+        } else {
+          await prisma.publication.update({
+            where: { id: pub.id },
+            data: { status: 'QUEUED' }
+          });
+        }
+      }
     } else {
       await prisma.publication.deleteMany({
         where: { contentId, status: 'QUEUED' }

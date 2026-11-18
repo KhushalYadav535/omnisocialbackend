@@ -776,6 +776,9 @@ Return ONLY a valid raw JSON object:
         const createdPubs: any[] = [];
 
         for (const p of posts) {
+          const reqPlatform = (p.targetPlatform || 'INSTAGRAM').toUpperCase();
+          const targetAccount = brand.socialAccounts.find(a => a.platform?.toUpperCase() === reqPlatform) || activeAccount;
+
           // Create Content post with resilience
           let content;
           try {
@@ -786,10 +789,10 @@ Return ONLY a valid raw JSON object:
                 caption: p.caption,
                 hashtags: JSON.stringify(p.hashtags || []),
                 mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-                targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+                targetPlatforms: JSON.stringify([reqPlatform]),
                 format: p.format || 'POST',
                 status: 'SCHEDULED',
-                clientApprovalStatus: 'APPROVED',
+                clientApprovalStatus: 'PENDING',
                 firstComment: p.firstComment || null,
                 viralityScore: 88 + Math.floor(Math.random() * 9),
                 createdByUserId: userId
@@ -804,9 +807,10 @@ Return ONLY a valid raw JSON object:
                   caption: p.caption,
                   hashtags: JSON.stringify(p.hashtags || []),
                   mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-                  targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+                  targetPlatforms: JSON.stringify([reqPlatform]),
                   format: p.format || 'POST',
                   status: 'SCHEDULED',
+                  clientApprovalStatus: 'PENDING',
                   createdByUserId: userId
                 }
               });
@@ -831,7 +835,7 @@ Return ONLY a valid raw JSON object:
           const pub = await tx.publication.create({
             data: {
               contentId: content.id,
-              socialAccountId: activeAccount.id,
+              socialAccountId: targetAccount.id,
               scheduledFor: new Date(p.scheduledDate),
               status: 'QUEUED',
               idempotencyKey: `camp_${content.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
@@ -850,6 +854,9 @@ Return ONLY a valid raw JSON object:
       console.warn('[CampaignDeploy] Interactive transaction timed out or pooler disconnected, falling back to direct resilient deployment:', txErr.message);
       createdPublications = [];
       for (const p of posts) {
+        const reqPlatform = (p.targetPlatform || 'INSTAGRAM').toUpperCase();
+        const targetAccount = brand.socialAccounts.find(a => a.platform?.toUpperCase() === reqPlatform) || activeAccount;
+
         let content;
         try {
           content = await prisma.content.create({
@@ -859,10 +866,10 @@ Return ONLY a valid raw JSON object:
               caption: p.caption,
               hashtags: JSON.stringify(p.hashtags || []),
               mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-              targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+              targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'APPROVED',
+              clientApprovalStatus: 'PENDING',
               firstComment: p.firstComment || null,
               viralityScore: 88 + Math.floor(Math.random() * 9),
               createdByUserId: userId
@@ -876,10 +883,10 @@ Return ONLY a valid raw JSON object:
               caption: p.caption,
               hashtags: JSON.stringify(p.hashtags || []),
               mediaUrls: JSON.stringify(p.mediaUrl ? [p.mediaUrl] : []),
-              targetPlatforms: JSON.stringify([p.targetPlatform || 'INSTAGRAM']),
+              targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'APPROVED',
+              clientApprovalStatus: 'PENDING',
               createdByUserId: userId
             }
           });
@@ -899,7 +906,7 @@ Return ONLY a valid raw JSON object:
         const pub = await prisma.publication.create({
           data: {
             contentId: content.id,
-            socialAccountId: activeAccount.id,
+            socialAccountId: targetAccount.id,
             scheduledFor: new Date(p.scheduledDate),
             status: 'QUEUED',
             idempotencyKey: `camp_${content.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`

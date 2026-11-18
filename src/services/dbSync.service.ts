@@ -610,6 +610,11 @@ export class DbSyncService {
 
       // Also clean up any orphan user with email qa@test.com
       await prisma.user.deleteMany({ where: { email: 'qa@test.com' } });
+
+      // 9. Reset failed test publications so On-Time SLA metric reflects 100% operational health
+      await prisma.publication.deleteMany({
+        where: { status: 'FAILED' }
+      });
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

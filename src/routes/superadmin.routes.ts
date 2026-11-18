@@ -79,9 +79,12 @@ router.get('/tenants', async (req: AuthRequest, res: Response): Promise<void> =>
     const tenants = await prisma.tenant.findMany({
       include: {
         subscriptionPlan: true,
+        users: {
+          where: { isActive: true },
+          select: { id: true }
+        },
         _count: {
           select: {
-            users: true,
             businesses: true
           }
         },
@@ -94,10 +97,9 @@ router.get('/tenants', async (req: AuthRequest, res: Response): Promise<void> =>
             },
             brands: {
               select: {
-                _count: {
-                  select: {
-                    socialAccounts: true
-                  }
+                socialAccounts: {
+                  where: { isConnected: true },
+                  select: { id: true }
                 }
               }
             }
@@ -113,7 +115,7 @@ router.get('/tenants', async (req: AuthRequest, res: Response): Promise<void> =>
       t.businesses.forEach(b => {
         brandCount += b._count.brands;
         b.brands.forEach(br => {
-          accountCount += br._count.socialAccounts;
+          accountCount += br.socialAccounts.length;
         });
       });
 
@@ -129,7 +131,7 @@ router.get('/tenants', async (req: AuthRequest, res: Response): Promise<void> =>
           code: t.subscriptionPlan.code,
           priceMonthly: t.subscriptionPlan.priceMonthly
         } : null,
-        userCount: t._count.users,
+        userCount: t.users?.length || 0,
         businessCount: t._count.businesses,
         brandCount,
         accountCount,

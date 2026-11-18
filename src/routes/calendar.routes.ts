@@ -49,10 +49,10 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       }
     }
 
-    // Filter out rejected or draft content from calendar view
+    // Filter out rejected, draft, or pending-approval content from live calendar view
     whereClause.content = {
       ...(whereClause.content || {}),
-      clientApprovalStatus: { not: 'REJECTED' },
+      clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] },
       status: { not: 'DRAFT' }
     };
 
@@ -116,7 +116,7 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         }
       },
       status: 'SCHEDULED',
-      clientApprovalStatus: { not: 'REJECTED' }
+      clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] }
     };
     if (brandId && typeof brandId === 'string') {
       standaloneContentWhere.brandId = brandId;
