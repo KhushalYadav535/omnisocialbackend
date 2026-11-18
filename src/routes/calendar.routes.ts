@@ -99,8 +99,76 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       };
     });
 
+    const publicationContentIds = new Set(publications.map(p => p.contentId).filter(Boolean));
+
+    // Also include any standalone scheduled content that may not have publications yet
+    const standaloneContentWhere: any = {
+      brand: {
+        business: {
+          tenantId: req.user?.tenantId!
+        }
+      },
+      status: 'SCHEDULED'
+    };
+    if (brandId && typeof brandId === 'string') {
+      standaloneContentWhere.brandId = brandId;
+    }
+    if (publicationContentIds.size > 0) {
+      standaloneContentWhere.id = { notIn: Array.from(publicationContentIds) as string[] };
+    }
+
+    const standaloneContents = await prisma.content.findMany({
+      where: standaloneContentWhere,
+      include: {
+        brand: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    const standaloneEvents = standaloneContents.map(c => {
+      let mediaUrls: string[] = [];
+      try {
+        mediaUrls = JSON.parse(c.mediaUrls || '[]');
+      } catch {
+        mediaUrls = [];
+      }
+      let targetPlatforms: string[] = ['INSTAGRAM'];
+      try {
+        targetPlatforms = JSON.parse(c.targetPlatforms || '["INSTAGRAM"]');
+      } catch {
+        targetPlatforms = ['INSTAGRAM'];
+      }
+
+      return {
+        id: `standalone_${c.id}`,
+        publicationId: `standalone_${c.id}`,
+        contentId: c.id,
+        title: c.title || 'Social Post',
+        caption: c.caption,
+        mediaUrls,
+        format: c.format || 'POST',
+        platform: targetPlatforms[0] || 'INSTAGRAM',
+        accountName: `${c.brand?.name || 'Brand'} (Official)`,
+        brandName: c.brand?.name,
+        brandId: c.brandId,
+        scheduledFor: c.createdAt,
+        claimedAt: null,
+        publishedAt: null,
+        status: 'QUEUED',
+        postUrl: null,
+        errorMessage: null,
+        isEvergreen: c.isEvergreen || false,
+        recycleIntervalDays: c.recycleIntervalDays || 60,
+        viralityScore: c.viralityScore || null,
+        firstComment: c.firstComment || null
+      };
+    });
+
+    const allEvents = [...calendarEvents, ...standaloneEvents];
+
     // Deduplicate duplicate events by title + platform + scheduled date
-    const uniqueEvents = calendarEvents.filter((ev, index, self) =>
+    const uniqueEvents = allEvents.filter((ev, index, self) =>
       index === self.findIndex(item =>
         item.title?.trim().toLowerCase() === ev.title?.trim().toLowerCase() &&
         item.platform === ev.platform &&

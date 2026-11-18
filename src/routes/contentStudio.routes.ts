@@ -63,7 +63,7 @@ router.get('/overview', async (req: AuthRequest, res: Response): Promise<void> =
           brandId,
           status: { notIn: ['FAILED', 'ARCHIVED'] },
           publications: { none: { status: 'FAILED' } },
-          clientApprovalStatus: { in: ['PENDING', 'CHANGES_REQUESTED'] }
+          clientApprovalStatus: 'PENDING'
         },
         select: { title: true }
       }).then(items => {
@@ -1119,16 +1119,70 @@ router.delete('/media/:id', async (req: AuthRequest, res: Response): Promise<voi
   try {
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
-    const brandId = await resolveBrandId(req);
+
+    let targetUrlToDelete: string | null = null;
 
     if (id.startsWith('content_asset_')) {
-      res.json({ success: true, message: 'Asset removed from library' });
-      return;
+      // Content post derived asset
+      const parts = id.split('_'); // ['content', 'asset', '<contentId>', '<uIdx>']
+      const contentId = parts[2];
+      const uIdx = Number(parts[3]);
+      if (contentId) {
+        const post = await prisma.content.findUnique({ where: { id: contentId } });
+        if (post) {
+          try {
+            const urls = JSON.parse(post.mediaUrls || '[]');
+            if (Array.isArray(urls)) {
+              targetUrlToDelete = urls[uIdx] || null;
+              const updatedUrls = urls.filter((_, idx) => idx !== uIdx);
+              await prisma.content.update({
+                where: { id: contentId },
+                data: { mediaUrls: JSON.stringify(updatedUrls) }
+              });
+            }
+          } catch {}
+        }
+      }
+    } else {
+      // Primary MediaAsset table item
+      const asset = await prisma.mediaAsset.findFirst({
+        where: {
+          id,
+          brand: { business: { tenantId: req.user!.tenantId! } }
+        }
+      });
+      if (asset) {
+        targetUrlToDelete = asset.fileUrl;
+        await prisma.mediaAsset.delete({ where: { id: asset.id } });
+      } else {
+        // Fallback delete by id
+        await prisma.mediaAsset.deleteMany({ where: { id } });
+      }
     }
 
-    await prisma.mediaAsset.deleteMany({
-      where: { id, brandId }
-    });
+    // Scrub URL from any content post attachments so it never re-extracts
+    if (targetUrlToDelete) {
+      try {
+        const matchingContents = await prisma.content.findMany({
+          where: {
+            brand: { business: { tenantId: req.user!.tenantId! } },
+            mediaUrls: { contains: targetUrlToDelete }
+          }
+        });
+        for (const mc of matchingContents) {
+          try {
+            const urls = JSON.parse(mc.mediaUrls || '[]');
+            if (Array.isArray(urls) && urls.includes(targetUrlToDelete)) {
+              const filtered = urls.filter((u: string) => u !== targetUrlToDelete);
+              await prisma.content.update({
+                where: { id: mc.id },
+                data: { mediaUrls: JSON.stringify(filtered) }
+              });
+            }
+          } catch {}
+        }
+      } catch {}
+    }
 
     res.json({ success: true, message: 'Asset deleted successfully' });
   } catch (err: any) {
