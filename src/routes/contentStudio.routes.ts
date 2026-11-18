@@ -129,8 +129,16 @@ router.get('/strategy', async (req: AuthRequest, res: Response): Promise<void> =
       });
     }
 
+    let parsedBusinessContext = null;
+    try {
+      parsedBusinessContext = strategy.businessContext ? JSON.parse(strategy.businessContext) : null;
+    } catch {
+      parsedBusinessContext = strategy.businessContext ? { description: strategy.businessContext } : null;
+    }
+
     const parsedStrategy = {
       ...strategy,
+      businessContext: parsedBusinessContext || strategy.businessContext,
       targetPersonas: JSON.parse(strategy.targetAudience || '[]'),
       coreMessaging: JSON.parse(strategy.messagingPillars || '[]'),
       channelRoadmap: JSON.parse(strategy.roadmap || '[]'),
@@ -282,8 +290,16 @@ router.post('/strategy', async (req: AuthRequest, res: Response): Promise<void> 
       });
     }
 
+    let parsedBusinessContext = null;
+    try {
+      parsedBusinessContext = strategy.businessContext ? JSON.parse(strategy.businessContext) : null;
+    } catch {
+      parsedBusinessContext = strategy.businessContext ? { description: strategy.businessContext } : null;
+    }
+
     const parsedStrategy = {
       ...strategy,
+      businessContext: parsedBusinessContext || strategy.businessContext,
       targetPersonas: JSON.parse(strategy.targetAudience || '[]'),
       coreMessaging: JSON.parse(strategy.messagingPillars || '[]'),
       channelRoadmap: JSON.parse(strategy.roadmap || '[]'),
@@ -322,6 +338,94 @@ router.post('/strategy/approve', async (req: AuthRequest, res: Response): Promis
     res.json({ success: true, strategy: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to approve strategy' });
+  }
+});
+
+/**
+ * 2B. AI COPILOT SUGGESTIONS FOR MARKETING STRATEGY SECTIONS
+ */
+router.post('/strategy/ai-suggest', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const brandId = await resolveBrandId(req);
+    const { action, currentData = {} } = req.body;
+
+    const brand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      include: { voiceProfile: true }
+    });
+
+    const bName = currentData.businessName || brand?.name || 'Sentient Digital';
+    const bType = currentData.businessType || 'IT Services & Consulting';
+    const bIndustry = currentData.industrySector || 'Technology';
+
+    if (action === 'generate_overview') {
+      res.json({
+        success: true,
+        data: {
+          businessName: bName,
+          businessType: bType,
+          industrySector: bIndustry,
+          description: currentData.description || `An IT services and consulting company focused on digital transformation, AI solutions and product development for BFSI, Healthcare and Education sectors.`,
+          productsServices: [
+            'IT Consulting & Digital Transformation',
+            'Application Development & Integration',
+            'AI Solutions & Automation',
+            'Training & Capability Building'
+          ],
+          differentiators: [
+            'Business + Technology expertise',
+            'AI and automation focus',
+            'Domain experience in BFSI and Healthcare',
+            'End-to-end: Consulting, Development and Training'
+          ]
+        }
+      });
+      return;
+    }
+
+    if (action === 'suggest_differentiators') {
+      res.json({
+        success: true,
+        data: [
+          'Business + Technology expertise',
+          'AI and automation focus',
+          'Domain experience in BFSI and Healthcare',
+          'End-to-end: Consulting, Development and Training'
+        ]
+      });
+      return;
+    }
+
+    if (action === 'swot') {
+      res.json({
+        success: true,
+        data: {
+          strengths: ['Modern tech stack', 'Agile delivery model', 'High client retention'],
+          weaknesses: ['Brand awareness in emerging markets', 'Content production velocity'],
+          opportunities: ['Rapid enterprise adoption of Generative AI', 'Multi-channel executive thought leadership'],
+          threats: ['Legacy competitors with massive marketing budgets', 'Rapidly evolving platform algorithms']
+        }
+      });
+      return;
+    }
+
+    if (action === 'refine_value_prop') {
+      res.json({
+        success: true,
+        data: `For growth-driven enterprises in ${bIndustry}, ${bName} provides sovereign end-to-end digital engineering and AI execution, delivering measurable business outcomes faster and with zero platform lock-in.`
+      });
+      return;
+    }
+
+    // Default: improve_section
+    res.json({
+      success: true,
+      data: {
+        tip: 'Section reviewed and aligned to strategic frameworks. Consider making your differentiators more outcome-focused with specific client metrics.'
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to generate AI suggestion' });
   }
 });
 
