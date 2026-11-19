@@ -778,13 +778,13 @@ export class DbSyncService {
       }
 
       // 14. Ensure 3 primary brand Media Assets always exist in MediaAsset table
-      const primaryBrand = await prisma.brand.findFirst();
-      if (primaryBrand) {
+      const mediaBrands = await prisma.brand.findMany();
+      for (const brand of mediaBrands) {
         const defaultAssets = [
           {
-            id: `media_asset_ceramic_${primaryBrand.id}`,
-            brandId: primaryBrand.id,
-            title: 'Handcrafted Ceramic Art - Studio Showcase',
+            id: `media_asset_ceramic_${brand.id}`,
+            brandId: brand.id,
+            title: 'Handcrafted Ceramic Art',
             fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
             fileType: 'IMAGE',
             fileSize: 420000,
@@ -792,8 +792,8 @@ export class DbSyncService {
             tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
           },
           {
-            id: `media_asset_scarf_${primaryBrand.id}`,
-            brandId: primaryBrand.id,
+            id: `media_asset_scarf_${brand.id}`,
+            brandId: brand.id,
             title: 'Provide 3 effortless ways to style your linen scarf',
             fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
             fileType: 'IMAGE',
@@ -802,8 +802,8 @@ export class DbSyncService {
             tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
           },
           {
-            id: `media_asset_arch_${primaryBrand.id}`,
-            brandId: primaryBrand.id,
+            id: `media_asset_arch_${brand.id}`,
+            brandId: brand.id,
             title: 'Modern Minimalist Architecture',
             fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
             fileType: 'IMAGE',
@@ -816,19 +816,27 @@ export class DbSyncService {
         for (const ast of defaultAssets) {
           const exists = await prisma.mediaAsset.findFirst({
             where: {
+              brandId: brand.id,
               OR: [
                 { id: ast.id },
                 { title: ast.title },
+                { title: { contains: ast.title } },
                 { fileUrl: ast.fileUrl }
               ]
             }
           });
           if (!exists) {
             await prisma.mediaAsset.create({ data: ast });
+          } else {
+            await prisma.mediaAsset.update({
+              where: { id: exists.id },
+              data: { title: ast.title, fileUrl: ast.fileUrl }
+            });
           }
         }
+      }
 
-        // Also ensure "Provide 3 effortless ways..." content post has valid mediaUrls restored
+      // Also ensure "Provide 3 effortless ways..." content post has valid mediaUrls restored
         const scarfPost = await prisma.content.findFirst({
           where: { title: { contains: 'Provide 3 effortless', mode: 'insensitive' } }
         });
@@ -840,7 +848,6 @@ export class DbSyncService {
             }
           });
         }
-      }
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

@@ -839,6 +839,33 @@ router.patch('/ideas/:id', async (req: AuthRequest, res: Response): Promise<void
   }
 });
 
+// Convert Idea into Post Creation Workflow
+router.post('/ideas/:id/turn-into-post', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    const idea = await prisma.contentIdea.findUnique({ where: { id } });
+    if (!idea) {
+      res.status(404).json({ error: 'Idea not found' });
+      return;
+    }
+
+    const updated = await prisma.contentIdea.update({
+      where: { id },
+      data: { status: 'IN_PROGRESS' }
+    });
+
+    res.json({
+      success: true,
+      message: 'Idea converted to post creation workflow',
+      idea: updated
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to convert idea to post' });
+  }
+});
+
 // =========================================================================
 // 5. CONTENT REQUESTS (Section 6.4)
 // =========================================================================
