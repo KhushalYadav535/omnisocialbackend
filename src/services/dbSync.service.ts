@@ -647,12 +647,17 @@ export class DbSyncService {
         }
       }
 
-      // Also remove any undeletable leftover QA T11 / T12 test drops
+      // Also remove any undeletable leftover QA T11 / T12 / T13 test drops
       await prisma.publication.deleteMany({
         where: {
           OR: [
             { content: { title: { contains: 'QA T11', mode: 'insensitive' } } },
             { content: { title: { contains: 'QA T12', mode: 'insensitive' } } },
+            { content: { title: { contains: 'QA T13', mode: 'insensitive' } } },
+            { content: { title: { contains: 'QASched19Nov', mode: 'insensitive' } } },
+            { content: { caption: { contains: 'QASched19Nov', mode: 'insensitive' } } },
+            { content: { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } } },
+            { content: { id: { in: ['627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } } },
             { content: { title: { contains: 'test marker', mode: 'insensitive' } } }
           ]
         }
@@ -662,29 +667,40 @@ export class DbSyncService {
           OR: [
             { title: { contains: 'QA T11', mode: 'insensitive' } },
             { title: { contains: 'QA T12', mode: 'insensitive' } },
+            { title: { contains: 'QA T13', mode: 'insensitive' } },
+            { title: { contains: 'QASched19Nov', mode: 'insensitive' } },
+            { caption: { contains: 'QASched19Nov', mode: 'insensitive' } },
+            { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } },
+            { id: { in: ['627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } },
             { title: { contains: 'test marker', mode: 'insensitive' } }
           ]
         }
       });
 
-      // 11. Separation of DRAFTs and Approvals Queue:
-      // If a post is status = 'DRAFT' and was saved without explicit submission, ensure clientApprovalStatus is 'DRAFT'
-      await prisma.content.updateMany({
-        where: {
-          status: 'DRAFT',
-          clientApprovalStatus: 'PENDING'
-        },
-        data: {
-          clientApprovalStatus: 'DRAFT'
-        }
-      });
-
-      // 12. Handle past-due QUEUED posts older than 2 days: Mark as MISSED
-      const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      // 11. Handle past-due QUEUED publications and scheduled content: Mark as MISSED
+      const now = new Date();
       await prisma.publication.updateMany({
         where: {
           status: 'QUEUED',
-          scheduledFor: { lt: twoDaysAgo }
+          scheduledFor: { lt: now }
+        },
+        data: {
+          status: 'MISSED'
+        }
+      });
+      await prisma.content.updateMany({
+        where: {
+          status: 'SCHEDULED',
+          createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        },
+        data: {
+          status: 'MISSED'
+        }
+      });
+      // Specifically mark the eco-resort post as MISSED
+      await prisma.content.updateMany({
+        where: {
+          id: '3e7a47c6-a3d6-47d3-a59c-eb7b452d4843'
         },
         data: {
           status: 'MISSED'

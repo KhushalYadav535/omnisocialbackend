@@ -118,47 +118,60 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const enriched = contents.map(c => ({
-      id: c.id,
-      brandId: c.brandId,
-      title: c.title,
-      rawIdea: c.rawIdea,
-      caption: c.caption,
-      hashtags: c.hashtags,
-      mediaUrls: c.mediaUrls,
-      targetPlatforms: c.targetPlatforms,
-      format: c.format,
-      status: c.status,
-      firstComment: c.firstComment,
-      viralityScore: c.viralityScore,
-      isEvergreen: c.isEvergreen,
-      recycleIntervalDays: c.recycleIntervalDays,
-      lastRecycledAt: c.lastRecycledAt,
-      clientApprovalStatus: c.clientApprovalStatus,
-      clientFeedback: c.clientFeedback,
-      createdByUserId: c.createdByUserId,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      brandName: c.brand?.name,
-      authorName: c.createdByUser?.name,
-      publications: c.publications.map(p => ({
-        id: p.id,
-        contentId: p.contentId,
-        socialAccountId: p.socialAccountId,
-        scheduledFor: p.scheduledFor,
-        claimedAt: p.claimedAt,
-        publishedAt: p.publishedAt,
-        status: p.status,
-        platformPostId: p.platformPostId,
-        platformPostUrl: p.platformPostUrl,
-        errorMessage: p.errorMessage,
-        retryCount: p.retryCount,
-        idempotencyKey: p.idempotencyKey,
-        createdAt: p.createdAt,
-        accountName: p.socialAccount?.accountName,
-        platform: p.socialAccount?.platform
-      }))
-    }));
+    const enriched = contents.map(c => {
+      let platformCaptions: Record<string, string> | null = null;
+      if (c.clientFeedback) {
+        try {
+          const parsed = JSON.parse(c.clientFeedback);
+          if (parsed && parsed.platformCaptions) {
+            platformCaptions = parsed.platformCaptions;
+          }
+        } catch {}
+      }
+
+      return {
+        id: c.id,
+        brandId: c.brandId,
+        title: c.title,
+        rawIdea: c.rawIdea,
+        caption: c.caption,
+        hashtags: c.hashtags,
+        mediaUrls: c.mediaUrls,
+        targetPlatforms: c.targetPlatforms,
+        format: c.format,
+        status: c.status,
+        firstComment: c.firstComment,
+        viralityScore: c.viralityScore,
+        isEvergreen: c.isEvergreen,
+        recycleIntervalDays: c.recycleIntervalDays,
+        lastRecycledAt: c.lastRecycledAt,
+        clientApprovalStatus: c.clientApprovalStatus,
+        clientFeedback: c.clientFeedback,
+        platformCaptions,
+        createdByUserId: c.createdByUserId,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        brandName: c.brand?.name,
+        authorName: c.createdByUser?.name,
+        publications: c.publications.map(p => ({
+          id: p.id,
+          contentId: p.contentId,
+          socialAccountId: p.socialAccountId,
+          scheduledFor: p.scheduledFor,
+          claimedAt: p.claimedAt,
+          publishedAt: p.publishedAt,
+          status: p.status,
+          platformPostId: p.platformPostId,
+          platformPostUrl: p.platformPostUrl,
+          errorMessage: p.errorMessage,
+          retryCount: p.retryCount,
+          idempotencyKey: p.idempotencyKey,
+          createdAt: p.createdAt,
+          accountName: p.socialAccount?.accountName,
+          platform: p.socialAccount?.platform
+        }))
+      };
+    });
 
     res.json({ contents: enriched });
   } catch (err: any) {
@@ -226,6 +239,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
             format,
             status: contentStatus,
             clientApprovalStatus: initialApprovalStatus,
+            clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
             firstComment: firstComment ? String(firstComment) : null,
             viralityScore: viralityScore ? Number(viralityScore) : null,
             isEvergreen: Boolean(isEvergreen),
@@ -581,6 +595,9 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (format !== undefined) updateData.format = format;
     if (status !== undefined) updateData.status = status;
     if (clientApprovalStatus !== undefined) updateData.clientApprovalStatus = clientApprovalStatus;
+    if (req.body.platformCaptions !== undefined) {
+      updateData.clientFeedback = JSON.stringify({ platformCaptions: req.body.platformCaptions });
+    }
 
     const updated = await prisma.content.update({
       where: { id },
@@ -614,7 +631,10 @@ router.post('/:id/submit-approval', async (req: AuthRequest, res: Response): Pro
 
     const updated = await prisma.content.update({
       where: { id },
-      data: { clientApprovalStatus: 'PENDING' }
+      data: {
+        clientApprovalStatus: 'PENDING',
+        status: 'SCHEDULED'
+      }
     });
 
     res.json({ success: true, message: 'Post successfully submitted to Client Approvals queue!', content: updated });

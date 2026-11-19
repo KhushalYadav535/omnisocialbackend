@@ -81,7 +81,7 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         mediaUrls = [];
       }
 
-      const isPastDue = pub.status === 'QUEUED' && pub.scheduledFor && new Date(pub.scheduledFor).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+      const isPastDue = pub.status === 'MISSED' || (pub.status === 'QUEUED' && pub.scheduledFor && new Date(pub.scheduledFor).getTime() < Date.now());
       const effectiveStatus = isPastDue ? 'MISSED' : pub.status;
 
       return {
@@ -152,6 +152,10 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         targetPlatforms = ['INSTAGRAM'];
       }
 
+      const scheduledDate = c.createdAt;
+      const isPastDue = c.status === 'MISSED' || (scheduledDate && new Date(scheduledDate).getTime() < Date.now());
+      const effectiveStatus = isPastDue ? 'MISSED' : (c.status === 'SCHEDULED' ? 'QUEUED' : c.status);
+
       return {
         id: `standalone_${c.id}`,
         publicationId: `standalone_${c.id}`,
@@ -164,10 +168,10 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         accountName: `${c.brand?.name || 'Brand'} (Official)`,
         brandName: c.brand?.name,
         brandId: c.brandId,
-        scheduledFor: c.createdAt,
+        scheduledFor: scheduledDate,
         claimedAt: null,
         publishedAt: null,
-        status: 'QUEUED',
+        status: effectiveStatus,
         postUrl: null,
         errorMessage: null,
         isEvergreen: c.isEvergreen || false,
