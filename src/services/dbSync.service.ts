@@ -804,51 +804,51 @@ export class DbSyncService {
               id: `media_asset_ceramic_${brand.id}`,
               brandId: brand.id,
               title: 'Handcrafted Ceramic Art',
-              fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+              fileUrl: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=1080&h=1080&fit=crop',
               fileType: 'IMAGE',
               fileSize: 420000,
-              mimeType: 'image/jpeg',
-              tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
+              tags: JSON.stringify(['Art', 'Ceramics', 'Studio']),
+              source: 'BRAND_ASSET'
             },
             {
               id: `media_asset_scarf_${brand.id}`,
               brandId: brand.id,
               title: 'Provide 3 effortless ways to style your linen scarf',
-              fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
+              fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1080&h=1080&fit=crop',
               fileType: 'IMAGE',
               fileSize: 380000,
-              mimeType: 'image/jpeg',
-              tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
+              tags: JSON.stringify(['Fashion', 'Linen', 'Editorial']),
+              source: 'BRAND_ASSET'
             },
             {
               id: `media_asset_arch_${brand.id}`,
               brandId: brand.id,
               title: 'Modern Minimalist Architecture',
-              fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
+              fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1080&h=1080&fit=crop',
               fileType: 'IMAGE',
               fileSize: 510000,
-              mimeType: 'image/jpeg',
-              tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
+              tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist']),
+              source: 'BRAND_ASSET'
             },
             {
               id: `media_asset_pottery_${brand.id}`,
               brandId: brand.id,
               title: 'Artisan Studio Pottery',
-              fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
+              fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=1080&h=1080&fit=crop',
               fileType: 'IMAGE',
               fileSize: 460000,
-              mimeType: 'image/jpeg',
-              tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
+              tags: JSON.stringify(['Pottery', 'Artisan', 'Craft']),
+              source: 'BRAND_ASSET'
             },
             {
               id: `media_asset_flatlay_${brand.id}`,
               brandId: brand.id,
               title: 'Aesthetic Clean Flatlay',
-              fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
+              fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=1080&h=1080&fit=crop',
               fileType: 'IMAGE',
               fileSize: 390000,
-              mimeType: 'image/jpeg',
-              tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
+              tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle']),
+              source: 'BRAND_ASSET'
             }
           ];
 
@@ -870,7 +870,7 @@ export class DbSyncService {
               } else {
                 await prisma.mediaAsset.update({
                   where: { id: exists.id },
-                  data: { title: ast.title, fileUrl: ast.fileUrl }
+                  data: { title: ast.title, fileUrl: ast.fileUrl, source: ast.source }
                 });
               }
             } catch (seedErr: any) {

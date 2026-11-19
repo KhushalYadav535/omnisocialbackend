@@ -1087,80 +1087,93 @@ router.delete('/campaigns/:id', async (req: AuthRequest, res: Response): Promise
 router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const brandId = await resolveBrandId(req);
-    let media = await prisma.mediaAsset.findMany({
-      where: { brandId },
-      orderBy: { createdAt: 'desc' }
-    });
 
-    if (media.length === 0 && brandId) {
+    // 1. Always ensure the 5 curated brand media assets exist for this brand
+    if (brandId) {
       const defaultAssets = [
         {
           id: `media_asset_ceramic_${brandId}`,
           brandId,
           title: 'Handcrafted Ceramic Art',
-          fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+          fileUrl: 'https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=1080&h=1080&fit=crop',
           fileType: 'IMAGE',
           fileSize: 420000,
-          mimeType: 'image/jpeg',
-          tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
+          tags: JSON.stringify(['Art', 'Ceramics', 'Studio']),
+          source: 'BRAND_ASSET'
         },
         {
           id: `media_asset_scarf_${brandId}`,
           brandId,
           title: 'Provide 3 effortless ways to style your linen scarf',
-          fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
+          fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1080&h=1080&fit=crop',
           fileType: 'IMAGE',
           fileSize: 380000,
-          mimeType: 'image/jpeg',
-          tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
+          tags: JSON.stringify(['Fashion', 'Linen', 'Editorial']),
+          source: 'BRAND_ASSET'
         },
         {
           id: `media_asset_arch_${brandId}`,
           brandId,
           title: 'Modern Minimalist Architecture',
-          fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
+          fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1080&h=1080&fit=crop',
           fileType: 'IMAGE',
           fileSize: 510000,
-          mimeType: 'image/jpeg',
-          tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
+          tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist']),
+          source: 'BRAND_ASSET'
         },
         {
           id: `media_asset_pottery_${brandId}`,
           brandId,
           title: 'Artisan Studio Pottery',
-          fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
+          fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=1080&h=1080&fit=crop',
           fileType: 'IMAGE',
           fileSize: 460000,
-          mimeType: 'image/jpeg',
-          tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
+          tags: JSON.stringify(['Pottery', 'Artisan', 'Craft']),
+          source: 'BRAND_ASSET'
         },
         {
           id: `media_asset_flatlay_${brandId}`,
           brandId,
           title: 'Aesthetic Clean Flatlay',
-          fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
+          fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=1080&h=1080&fit=crop',
           fileType: 'IMAGE',
           fileSize: 390000,
-          mimeType: 'image/jpeg',
-          tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
+          tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle']),
+          source: 'BRAND_ASSET'
         }
       ];
 
       for (const ast of defaultAssets) {
         try {
-          await prisma.mediaAsset.create({ data: ast });
-        } catch {
-          try {
-            await prisma.mediaAsset.update({ where: { id: ast.id }, data: ast });
-          } catch {}
+          const exists = await prisma.mediaAsset.findFirst({
+            where: {
+              brandId,
+              OR: [
+                { id: ast.id },
+                { title: ast.title },
+                { title: { contains: ast.title } },
+                { fileUrl: ast.fileUrl }
+              ]
+            }
+          });
+          if (!exists) {
+            await prisma.mediaAsset.create({ data: ast });
+          } else {
+            await prisma.mediaAsset.update({
+              where: { id: exists.id },
+              data: { title: ast.title, fileUrl: ast.fileUrl, source: ast.source }
+            });
+          }
+        } catch (e: any) {
+          console.warn('Media asset upsert notice:', e.message);
         }
       }
-
-      media = await prisma.mediaAsset.findMany({
-        where: { brandId },
-        orderBy: { createdAt: 'desc' }
-      });
     }
+
+    let media = await prisma.mediaAsset.findMany({
+      where: { brandId },
+      orderBy: { createdAt: 'desc' }
+    });
 
     let formattedMedia = media.map(m => ({
       ...m,
@@ -1184,7 +1197,11 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
       try {
         const urls = JSON.parse(c.mediaUrls || '[]');
         if (Array.isArray(urls) && urls.length > 0) {
-          urls.forEach((u, uIdx) => {
+          urls.forEach((rawU, uIdx) => {
+            const u = typeof rawU === 'string' && rawU.startsWith('http://')
+              ? rawU.replace('http://', 'https://')
+              : rawU;
+
             const isInvalidOrPlaceholder = !u ||
               typeof u !== 'string' ||
               u.startsWith('blob:') ||
@@ -1211,6 +1228,8 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
         }
       } catch {}
     }
+
+    // Curated primary assets come first, followed by any post attachments
     formattedMedia = [...formattedMedia, ...extracted];
 
     res.json({
