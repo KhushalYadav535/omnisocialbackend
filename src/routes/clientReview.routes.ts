@@ -132,10 +132,11 @@ router.get('/public/:token', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Fetch posts awaiting review or recently scheduled
+    // Fetch posts awaiting review or recently approved/requested changes (exclude internal drafts)
     const contents = await prisma.content.findMany({
       where: {
-        brandId: shareToken.brandId
+        brandId: shareToken.brandId,
+        clientApprovalStatus: { in: ['PENDING', 'APPROVED', 'CHANGES_REQUESTED'] }
       },
       include: {
         publications: {
@@ -172,9 +173,8 @@ router.get('/public/:token', async (req: Request, res: Response): Promise<void> 
       } catch {
         mediaUrls = [];
       }
-      if (mediaUrls.length === 0) {
-        mediaUrls = ['https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'];
-      }
+      // Scrub any leftover yellow sweatpants fallback
+      mediaUrls = mediaUrls.filter(u => !u.includes('photo-1515886657613-9f3515b0c78f'));
 
       return {
         id: c.id,

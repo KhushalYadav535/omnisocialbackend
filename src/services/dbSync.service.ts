@@ -697,15 +697,53 @@ export class DbSyncService {
           status: 'MISSED'
         }
       });
-      // Specifically mark the eco-resort post as MISSED
-      await prisma.content.updateMany({
+
+      // 12. Restore the Nov 3 eco-resort post into the app calendar & dashboard queue with MISSED badge
+      const ecoPostIds = ['8c9b17f5-f1e7-49a2-8ead-fef095874f13', '13998b4b-29f3-491a-a289-430fb2eba9e1', '3e7a47c6-a3d6-47d3-a59c-eb7b452d4843'];
+      const ecoPosts = await prisma.content.findMany({
         where: {
-          id: '3e7a47c6-a3d6-47d3-a59c-eb7b452d4843'
+          OR: [
+            { id: { in: ecoPostIds } },
+            { title: { contains: 'eco-friendly', mode: 'insensitive' } },
+            { rawIdea: { contains: 'resort capsule collection', mode: 'insensitive' } }
+          ]
         },
-        data: {
-          status: 'MISSED'
-        }
+        include: { publications: true, brand: { include: { socialAccounts: true } } }
       });
+
+      for (const ep of ecoPosts) {
+        await prisma.content.update({
+          where: { id: ep.id },
+          data: {
+            status: 'MISSED',
+            clientApprovalStatus: 'APPROVED'
+          }
+        });
+
+        if (ep.publications.length === 0) {
+          const accountId = ep.brand?.socialAccounts?.[0]?.id;
+          if (accountId) {
+            await prisma.publication.create({
+              data: {
+                contentId: ep.id,
+                socialAccountId: accountId,
+                scheduledFor: new Date('2026-11-03T09:16:00.000Z'), // 3 Nov 2026, 2:46 PM IST
+                status: 'MISSED'
+              }
+            });
+          }
+        } else {
+          for (const pub of ep.publications) {
+            await prisma.publication.update({
+              where: { id: pub.id },
+              data: {
+                status: 'MISSED',
+                scheduledFor: new Date('2026-11-03T09:16:00.000Z')
+              }
+            });
+          }
+        }
+      }
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

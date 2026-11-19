@@ -112,14 +112,14 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
 
     const publicationContentIds = new Set(publications.map(p => p.contentId).filter(Boolean));
 
-    // Also include any standalone scheduled content that may not have publications yet
+    // Also include any standalone scheduled or missed content that may not have publications yet
     const standaloneContentWhere: any = {
       brand: {
         business: {
           tenantId: req.user?.tenantId!
         }
       },
-      status: 'SCHEDULED',
+      status: { in: ['SCHEDULED', 'MISSED'] },
       clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] }
     };
     if (brandId && typeof brandId === 'string') {
