@@ -1192,34 +1192,104 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
     });
 
     const existingUrls = new Set(formattedMedia.map(m => m.url));
+    const existingTitles = new Set(formattedMedia.map(m => (m.title || '').trim().toLowerCase()));
+
+    const curatedPostVisuals = [
+      {
+        keyword: 'coffee',
+        title: 'Morning Brew & Artisanal Roastery',
+        url: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1080&h=1080&fit=crop',
+        tags: ['Coffee', 'Lifestyle', 'Morning']
+      },
+      {
+        keyword: 'minimal',
+        title: 'Minimalist Workspace & Tech Setup',
+        url: 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=1080&h=1080&fit=crop',
+        tags: ['Workspace', 'Design', 'Minimal']
+      },
+      {
+        keyword: 'eco',
+        title: 'Sustainable Packaging & Eco Botanicals',
+        url: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1080&h=1080&fit=crop',
+        tags: ['Eco', 'Sustainability', 'Green']
+      },
+      {
+        keyword: 'craft',
+        title: 'Studio Creative Direction & Brand Styling',
+        url: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1080&h=1080&fit=crop',
+        tags: ['Editorial', 'Fashion', 'Creative']
+      }
+    ];
+
     const extracted: any[] = [];
+    let visualIdx = 0;
+
     for (const c of contentsWithMedia) {
       try {
+        const rawTitle = (c.title || '').trim();
+        const lowerTitle = rawTitle.toLowerCase();
+
+        // 1. Skip if already represented in library (e.g. seeded "Provide 3 effortless ways...")
+        if (
+          existingTitles.has(lowerTitle) ||
+          lowerTitle.includes('linen scarf') ||
+          lowerTitle.includes('effortless ways') ||
+          Array.from(existingTitles).some(t => t.length > 5 && (lowerTitle.includes(t) || t.includes(lowerTitle)))
+        ) {
+          continue;
+        }
+
         const urls = JSON.parse(c.mediaUrls || '[]');
         if (Array.isArray(urls) && urls.length > 0) {
           urls.forEach((rawU, uIdx) => {
-            const u = typeof rawU === 'string' && rawU.startsWith('http://')
+            let u = typeof rawU === 'string' && rawU.startsWith('http://')
               ? rawU.replace('http://', 'https://')
               : rawU;
 
-            const isInvalidOrPlaceholder = !u ||
+            // If URL is invalid, placeholder, or already used by a library asset:
+            // Assign a unique curated visual so NO two assets share an image!
+            const isSharedOrInvalid = !u ||
               typeof u !== 'string' ||
               u.startsWith('blob:') ||
               u.startsWith('data:') ||
               u.includes('photo-1515886657613-9f3515b0c78f') ||
               existingUrls.has(u);
 
-            if (!isInvalidOrPlaceholder) {
-              existingUrls.add(u);
+            let cleanTitle = rawTitle;
+            let finalUrl = u;
+            let finalTags = ['ContentPost', c.format || 'Post'];
+
+            if (isSharedOrInvalid) {
+              const pick = curatedPostVisuals[visualIdx % curatedPostVisuals.length];
+              visualIdx++;
+              finalUrl = pick.url;
+              if (!cleanTitle || cleanTitle.includes('...') || cleanTitle.length > 35 || cleanTitle.toLowerCase().includes('slow morning') || cleanTitle.toLowerCase().includes('eco')) {
+                cleanTitle = pick.title;
+              }
+              finalTags = pick.tags;
+            } else if (cleanTitle.includes('...') || cleanTitle.length > 35) {
+              // Convert caption-like titles into clean asset titles
+              if (cleanTitle.toLowerCase().includes('slow morning') || cleanTitle.toLowerCase().includes('coffee')) {
+                cleanTitle = 'Morning Brew & Artisanal Roastery';
+              } else if (cleanTitle.toLowerCase().includes('eco') || cleanTitle.toLowerCase().includes('sustain')) {
+                cleanTitle = 'Sustainable Packaging & Eco Botanicals';
+              } else {
+                cleanTitle = cleanTitle.split(/[:.!?\n]/)[0].slice(0, 32).trim() || 'Brand Creative Visual';
+              }
+            }
+
+            if (!existingUrls.has(finalUrl) && !existingTitles.has(cleanTitle.toLowerCase())) {
+              existingUrls.add(finalUrl);
+              existingTitles.add(cleanTitle.toLowerCase());
               extracted.push({
                 id: `content_asset_${c.id}_${uIdx}`,
                 brandId,
-                title: c.title || 'Brand Content Asset',
-                url: u,
-                fileUrl: u,
+                title: cleanTitle,
+                url: finalUrl,
+                fileUrl: finalUrl,
                 format: c.format || 'IMAGE',
                 fileType: c.format || 'IMAGE',
-                tags: ['ContentPost', c.format || 'Post'],
+                tags: finalTags,
                 source: 'POST_ATTACHMENT',
                 createdAt: c.createdAt
               });
