@@ -1074,8 +1074,10 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
 
     // Merge post-derived media assets with library assets so they never vanish
     const contentsWithMedia = await prisma.content.findMany({
-      where: { brandId },
-      take: 12,
+      where: {
+        brandId,
+        NOT: { mediaUrls: '[]' }
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -1158,30 +1160,6 @@ router.delete('/media/:id', async (req: AuthRequest, res: Response): Promise<voi
         // Fallback delete by id
         await prisma.mediaAsset.deleteMany({ where: { id } });
       }
-    }
-
-    // Scrub URL from any content post attachments so it never re-extracts
-    if (targetUrlToDelete) {
-      try {
-        const matchingContents = await prisma.content.findMany({
-          where: {
-            brand: { business: { tenantId: req.user!.tenantId! } },
-            mediaUrls: { contains: targetUrlToDelete }
-          }
-        });
-        for (const mc of matchingContents) {
-          try {
-            const urls = JSON.parse(mc.mediaUrls || '[]');
-            if (Array.isArray(urls) && urls.includes(targetUrlToDelete)) {
-              const filtered = urls.filter((u: string) => u !== targetUrlToDelete);
-              await prisma.content.update({
-                where: { id: mc.id },
-                data: { mediaUrls: JSON.stringify(filtered) }
-              });
-            }
-          } catch {}
-        }
-      } catch {}
     }
 
     res.json({ success: true, message: 'Asset deleted successfully' });

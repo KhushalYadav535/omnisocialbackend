@@ -226,33 +226,108 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     const result = await prisma.$transaction(async (tx) => {
       let content;
-      try {
-        content = await tx.content.create({
-          data: {
+      const existingDraftId = req.body.activeDraftId || req.body.id;
+
+      // 1. If existing draft ID passed, update in-place to prevent duplicates
+      if (existingDraftId) {
+        const existing = await tx.content.findFirst({
+          where: { id: existingDraftId, brandId }
+        });
+        if (existing) {
+          try {
+            content = await tx.content.update({
+              where: { id: existingDraftId },
+              data: {
+                title: title || existing.title,
+                rawIdea: rawIdea !== undefined ? rawIdea : existing.rawIdea,
+                caption,
+                hashtags: hashtagsStr,
+                mediaUrls: mediaUrlsStr,
+                targetPlatforms: targetPlatformsStr,
+                format,
+                status: contentStatus,
+                clientApprovalStatus: initialApprovalStatus,
+                clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
+                firstComment: firstComment ? String(firstComment) : null,
+                viralityScore: viralityScore ? Number(viralityScore) : null,
+                isEvergreen: Boolean(isEvergreen),
+                recycleIntervalDays: Number(recycleIntervalDays) || 60
+              }
+            });
+          } catch {
+            content = await tx.content.update({
+              where: { id: existingDraftId },
+              data: {
+                title: title || existing.title,
+                rawIdea: rawIdea !== undefined ? rawIdea : existing.rawIdea,
+                caption,
+                hashtags: hashtagsStr,
+                mediaUrls: mediaUrlsStr,
+                targetPlatforms: targetPlatformsStr,
+                format,
+                status: contentStatus,
+                clientApprovalStatus: initialApprovalStatus
+              }
+            });
+          }
+        }
+      }
+
+      // 2. If saving a pure DRAFT without an ID, check if an identical draft was saved within the last 30 minutes
+      if (!content && contentStatus === 'DRAFT') {
+        const recentDuplicate = await tx.content.findFirst({
+          where: {
             brandId,
+            status: 'DRAFT',
             title: title || caption.slice(0, 40) + '...',
-            rawIdea: rawIdea || null,
-            caption,
-            hashtags: hashtagsStr,
-            mediaUrls: mediaUrlsStr,
-            targetPlatforms: targetPlatformsStr,
-            format,
-            status: contentStatus,
-            clientApprovalStatus: initialApprovalStatus,
-            clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
-            firstComment: firstComment ? String(firstComment) : null,
-            viralityScore: viralityScore ? Number(viralityScore) : null,
-            isEvergreen: Boolean(isEvergreen),
-            recycleIntervalDays: Number(recycleIntervalDays) || 60,
-            createdByUserId: req.user!.id
+            createdByUserId: req.user!.id,
+            createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) }
           }
         });
-      } catch (createErr: any) {
-        if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
-          // Graceful fallback if production database columns are still syncing
+        if (recentDuplicate) {
+          content = await tx.content.update({
+            where: { id: recentDuplicate.id },
+            data: {
+              rawIdea: rawIdea !== undefined ? rawIdea : recentDuplicate.rawIdea,
+              caption,
+              hashtags: hashtagsStr,
+              mediaUrls: mediaUrlsStr,
+              targetPlatforms: targetPlatformsStr,
+              format,
+              clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined
+            }
+          });
+        }
+      }
+
+      if (!content) {
+        try {
           content = await tx.content.create({
             data: {
               brandId,
+              title: title || caption.slice(0, 40) + '...',
+              rawIdea: rawIdea || null,
+              caption,
+              hashtags: hashtagsStr,
+              mediaUrls: mediaUrlsStr,
+              targetPlatforms: targetPlatformsStr,
+              format,
+              status: contentStatus,
+              clientApprovalStatus: initialApprovalStatus,
+              clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
+              firstComment: firstComment ? String(firstComment) : null,
+              viralityScore: viralityScore ? Number(viralityScore) : null,
+              isEvergreen: Boolean(isEvergreen),
+              recycleIntervalDays: Number(recycleIntervalDays) || 60,
+              createdByUserId: req.user!.id
+            }
+          });
+        } catch (createErr: any) {
+          if (createErr.message && (createErr.message.includes('firstComment') || createErr.message.includes('does not exist'))) {
+            // Graceful fallback if production database columns are still syncing
+            content = await tx.content.create({
+              data: {
+                brandId,
               title: title || caption.slice(0, 40) + '...',
               rawIdea: rawIdea || null,
               caption,
@@ -269,6 +344,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
           throw createErr;
         }
       }
+    }
 
       // Initial version record
       await tx.contentVersion.create({

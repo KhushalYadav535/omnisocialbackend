@@ -451,10 +451,13 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
       await prisma.publication.delete({ where: { id: pub.id } });
 
       // If no other publications remain for this content, delete the content and versions
+      // EXCEPT if the content is APPROVED or PUBLISHED, keep the content record intact
       const remaining = await prisma.publication.count({ where: { contentId } });
       if (remaining === 0) {
-        await prisma.contentVersion.deleteMany({ where: { contentId } });
-        await prisma.content.delete({ where: { id: contentId } });
+        if (pub.content?.clientApprovalStatus !== 'APPROVED' && pub.content?.status !== 'PUBLISHED') {
+          await prisma.contentVersion.deleteMany({ where: { contentId } });
+          await prisma.content.delete({ where: { id: contentId } });
+        }
       }
 
       await AuditService.record({
