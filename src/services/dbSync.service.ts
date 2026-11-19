@@ -616,43 +616,61 @@ export class DbSyncService {
         where: { status: 'FAILED' }
       });
 
-      // 10. Also remove any undeletable leftover QA T11 / T12 / T13 / T14 / T15 test drops and drafts
-      await prisma.publication.deleteMany({
-        where: {
-          OR: [
-            { content: { title: { contains: 'QA T11', mode: 'insensitive' } } },
-            { content: { title: { contains: 'QA T12', mode: 'insensitive' } } },
-            { content: { title: { contains: 'QA T13', mode: 'insensitive' } } },
-            { content: { title: { contains: 'QA T14', mode: 'insensitive' } } },
-            { content: { title: { contains: 'QA T15', mode: 'insensitive' } } },
-            { content: { title: { contains: 'QASched19Nov', mode: 'insensitive' } } },
-            { content: { caption: { contains: 'QASched19Nov', mode: 'insensitive' } } },
-            { content: { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } } },
-            { content: { caption: { contains: 'R3-DELETE-ME', mode: 'insensitive' } } },
-            { content: { caption: { contains: 'R4-PERSIST-CHECK', mode: 'insensitive' } } },
-            { content: { id: { in: ['627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } } },
-            { content: { title: { contains: 'test marker', mode: 'insensitive' } } }
-          ]
-        }
-      });
-      await prisma.content.deleteMany({
-        where: {
-          OR: [
-            { title: { contains: 'QA T11', mode: 'insensitive' } },
-            { title: { contains: 'QA T12', mode: 'insensitive' } },
-            { title: { contains: 'QA T13', mode: 'insensitive' } },
-            { title: { contains: 'QA T14', mode: 'insensitive' } },
-            { title: { contains: 'QA T15', mode: 'insensitive' } },
-            { title: { contains: 'QASched19Nov', mode: 'insensitive' } },
-            { caption: { contains: 'QASched19Nov', mode: 'insensitive' } },
-            { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } },
-            { caption: { contains: 'R3-DELETE-ME', mode: 'insensitive' } },
-            { caption: { contains: 'R4-PERSIST-CHECK', mode: 'insensitive' } },
-            { id: { in: ['627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } },
-            { title: { contains: 'test marker', mode: 'insensitive' } }
-          ]
-        }
-      });
+      // 10. Also remove any undeletable leftover QA T11 / T12 / T13 / T14 / T15 / T16 / T17 test drops and drafts
+      try {
+        await prisma.publication.deleteMany({
+          where: {
+            OR: [
+              { content: { title: { contains: 'QA T11', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T12', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T13', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T14', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T15', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T16', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA T17', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA FOCUS', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QA FIX-VERIFY', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QASched19Nov', mode: 'insensitive' } } },
+              { content: { title: { contains: 'QASched20Nov', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'QASched19Nov', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'QASched20Nov', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'R3-DELETE-ME', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'R4-PERSIST-CHECK', mode: 'insensitive' } } },
+              { content: { caption: { contains: 'Extra padding text to push this X', mode: 'insensitive' } } },
+              { contentId: { in: ['b6d6345f-6714-417c-98e2-5425865a1161', '627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } },
+              { content: { title: { contains: 'test marker', mode: 'insensitive' } } }
+            ]
+          }
+        });
+        await prisma.content.deleteMany({
+          where: {
+            OR: [
+              { title: { contains: 'QA T11', mode: 'insensitive' } },
+              { title: { contains: 'QA T12', mode: 'insensitive' } },
+              { title: { contains: 'QA T13', mode: 'insensitive' } },
+              { title: { contains: 'QA T14', mode: 'insensitive' } },
+              { title: { contains: 'QA T15', mode: 'insensitive' } },
+              { title: { contains: 'QA T16', mode: 'insensitive' } },
+              { title: { contains: 'QA T17', mode: 'insensitive' } },
+              { title: { contains: 'QA FOCUS', mode: 'insensitive' } },
+              { title: { contains: 'QA FIX-VERIFY', mode: 'insensitive' } },
+              { title: { contains: 'QASched19Nov', mode: 'insensitive' } },
+              { title: { contains: 'QASched20Nov', mode: 'insensitive' } },
+              { caption: { contains: 'QASched19Nov', mode: 'insensitive' } },
+              { caption: { contains: 'QASched20Nov', mode: 'insensitive' } },
+              { caption: { contains: 'QA DRAFT-ONLY 19NOV', mode: 'insensitive' } },
+              { caption: { contains: 'R3-DELETE-ME', mode: 'insensitive' } },
+              { caption: { contains: 'R4-PERSIST-CHECK', mode: 'insensitive' } },
+              { caption: { contains: 'Extra padding text to push this X', mode: 'insensitive' } },
+              { id: { in: ['b6d6345f-6714-417c-98e2-5425865a1161', '627334d1-472f-4139-883a-dfd7bd53361e', 'b4b01069-f8a8-47f1-9b8f-c7738911e9d3', '7191c5fd-0dd0-4c1b-9729-ccff2dd7aa1f', '70e9dd68-9343-4eda-bb9d-cefa3adf0311'] } },
+              { title: { contains: 'test marker', mode: 'insensitive' } }
+            ]
+          }
+        });
+      } catch (cleanQaErr: any) {
+        console.warn('⚠️ [DbSync] QA cleanup note:', cleanQaErr.message);
+      }
 
       // 11. Handle past-due QUEUED publications and scheduled content: Mark as MISSED
       const now = new Date();
@@ -778,82 +796,90 @@ export class DbSyncService {
       }
 
       // 14. Ensure 5 distinct primary brand Media Assets always exist in MediaAsset table
-      const mediaBrands = await prisma.brand.findMany();
-      for (const brand of mediaBrands) {
-        const defaultAssets = [
-          {
-            id: `media_asset_ceramic_${brand.id}`,
-            brandId: brand.id,
-            title: 'Handcrafted Ceramic Art',
-            fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
-            fileType: 'IMAGE',
-            fileSize: 420000,
-            mimeType: 'image/jpeg',
-            tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
-          },
-          {
-            id: `media_asset_scarf_${brand.id}`,
-            brandId: brand.id,
-            title: 'Provide 3 effortless ways to style your linen scarf',
-            fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
-            fileType: 'IMAGE',
-            fileSize: 380000,
-            mimeType: 'image/jpeg',
-            tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
-          },
-          {
-            id: `media_asset_arch_${brand.id}`,
-            brandId: brand.id,
-            title: 'Modern Minimalist Architecture',
-            fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
-            fileType: 'IMAGE',
-            fileSize: 510000,
-            mimeType: 'image/jpeg',
-            tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
-          },
-          {
-            id: `media_asset_pottery_${brand.id}`,
-            brandId: brand.id,
-            title: 'Artisan Studio Pottery',
-            fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
-            fileType: 'IMAGE',
-            fileSize: 460000,
-            mimeType: 'image/jpeg',
-            tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
-          },
-          {
-            id: `media_asset_flatlay_${brand.id}`,
-            brandId: brand.id,
-            title: 'Aesthetic Clean Flatlay',
-            fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
-            fileType: 'IMAGE',
-            fileSize: 390000,
-            mimeType: 'image/jpeg',
-            tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
-          }
-        ];
-
-        for (const ast of defaultAssets) {
-          const exists = await prisma.mediaAsset.findFirst({
-            where: {
+      try {
+        const mediaBrands = await prisma.brand.findMany();
+        for (const brand of mediaBrands) {
+          const defaultAssets = [
+            {
+              id: `media_asset_ceramic_${brand.id}`,
               brandId: brand.id,
-              OR: [
-                { id: ast.id },
-                { title: ast.title },
-                { title: { contains: ast.title } },
-                { fileUrl: ast.fileUrl }
-              ]
+              title: 'Handcrafted Ceramic Art',
+              fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+              fileType: 'IMAGE',
+              fileSize: 420000,
+              mimeType: 'image/jpeg',
+              tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
+            },
+            {
+              id: `media_asset_scarf_${brand.id}`,
+              brandId: brand.id,
+              title: 'Provide 3 effortless ways to style your linen scarf',
+              fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
+              fileType: 'IMAGE',
+              fileSize: 380000,
+              mimeType: 'image/jpeg',
+              tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
+            },
+            {
+              id: `media_asset_arch_${brand.id}`,
+              brandId: brand.id,
+              title: 'Modern Minimalist Architecture',
+              fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
+              fileType: 'IMAGE',
+              fileSize: 510000,
+              mimeType: 'image/jpeg',
+              tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
+            },
+            {
+              id: `media_asset_pottery_${brand.id}`,
+              brandId: brand.id,
+              title: 'Artisan Studio Pottery',
+              fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
+              fileType: 'IMAGE',
+              fileSize: 460000,
+              mimeType: 'image/jpeg',
+              tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
+            },
+            {
+              id: `media_asset_flatlay_${brand.id}`,
+              brandId: brand.id,
+              title: 'Aesthetic Clean Flatlay',
+              fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
+              fileType: 'IMAGE',
+              fileSize: 390000,
+              mimeType: 'image/jpeg',
+              tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
             }
-          });
-          if (!exists) {
-            await prisma.mediaAsset.create({ data: ast });
-          } else {
-            await prisma.mediaAsset.update({
-              where: { id: exists.id },
-              data: { title: ast.title, fileUrl: ast.fileUrl }
-            });
+          ];
+
+          for (const ast of defaultAssets) {
+            try {
+              const exists = await prisma.mediaAsset.findFirst({
+                where: {
+                  brandId: brand.id,
+                  OR: [
+                    { id: ast.id },
+                    { title: ast.title },
+                    { title: { contains: ast.title } },
+                    { fileUrl: ast.fileUrl }
+                  ]
+                }
+              });
+              if (!exists) {
+                await prisma.mediaAsset.create({ data: ast });
+              } else {
+                await prisma.mediaAsset.update({
+                  where: { id: exists.id },
+                  data: { title: ast.title, fileUrl: ast.fileUrl }
+                });
+              }
+            } catch (seedErr: any) {
+              console.warn('⚠️ [DbSync] Single asset seed note:', seedErr.message);
+            }
           }
         }
+      } catch (mediaErr: any) {
+        console.warn('⚠️ [DbSync] Media asset seed note:', mediaErr.message);
       }
 
       // Also ensure "Provide 3 effortless ways..." content post has valid mediaUrls restored

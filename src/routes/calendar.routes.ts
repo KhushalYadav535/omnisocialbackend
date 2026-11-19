@@ -425,12 +425,17 @@ router.patch('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthR
 router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rawId = req.params.id;
-    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const rawString = Array.isArray(rawId) ? rawId[0] : rawId;
+    const cleanId = rawString.replace(/^standalone_/, '');
+    const idsToCheck = Array.from(new Set([rawString, cleanId]));
 
     // Check if it matches a publication ID or contentId
     let pub = await prisma.publication.findFirst({
       where: {
-        OR: [{ id }, { contentId: id }],
+        OR: [
+          { id: { in: idsToCheck } },
+          { contentId: { in: idsToCheck } }
+        ],
         ...(req.user?.tenantId ? {
           content: { brand: { business: { tenantId: req.user.tenantId } } }
         } : {})
@@ -441,7 +446,12 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     if (!pub) {
       // Fallback lookup without tenant constraint in case of multi-tenant/superadmin context
       pub = await prisma.publication.findFirst({
-        where: { OR: [{ id }, { contentId: id }] },
+        where: {
+          OR: [
+            { id: { in: idsToCheck } },
+            { contentId: { in: idsToCheck } }
+          ]
+        },
         include: { content: true }
       });
     }
@@ -451,10 +461,10 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
       await prisma.publication.delete({ where: { id: pub.id } });
 
       // If no other publications remain for this content, delete the content and versions
-      // EXCEPT if the content is APPROVED or PUBLISHED, keep the content record intact
+      // Allow deletion as long as post is not already published live
       const remaining = await prisma.publication.count({ where: { contentId } });
       if (remaining === 0) {
-        if (pub.content?.clientApprovalStatus !== 'APPROVED' && pub.content?.status !== 'PUBLISHED') {
+        if (pub.content?.status !== 'PUBLISHED') {
           await prisma.contentVersion.deleteMany({ where: { contentId } });
           await prisma.content.delete({ where: { id: contentId } });
         }
@@ -476,7 +486,7 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     // Check if it matches a Content ID directly
     let content = await prisma.content.findFirst({
       where: {
-        id,
+        id: { in: idsToCheck },
         ...(req.user?.tenantId ? {
           brand: { business: { tenantId: req.user.tenantId } }
         } : {})
@@ -484,7 +494,9 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     });
 
     if (!content) {
-      content = await prisma.content.findUnique({ where: { id } });
+      content = await prisma.content.findFirst({
+        where: { id: { in: idsToCheck } }
+      });
     }
 
     if (content) {

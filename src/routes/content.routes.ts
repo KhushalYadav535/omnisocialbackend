@@ -153,6 +153,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
         updatedAt: c.updatedAt,
         brandName: c.brand?.name,
         authorName: c.createdByUser?.name,
+        scheduledFor: c.publications?.[0]?.scheduledFor || null,
         publications: c.publications.map(p => ({
           id: p.id,
           contentId: p.contentId,
@@ -368,7 +369,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
             where: { brandId: brand.id }
           });
           if (brandAccounts.length > 0) {
-            targetAccountIds = [brandAccounts[0].id];
+            targetAccountIds = brandAccounts.map(a => a.id);
           } else {
             const sandboxAccount = await tx.socialAccount.create({
               data: {
@@ -649,7 +650,7 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
-    const { title, caption, hashtags, mediaUrls, format, status, clientApprovalStatus } = req.body;
+    const { title, caption, hashtags, mediaUrls, format, status, clientApprovalStatus, scheduledFor, socialAccountIds, targetPlatforms } = req.body;
 
     const content = await prisma.content.findFirst({
       where: {
@@ -671,13 +672,62 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (format !== undefined) updateData.format = format;
     if (status !== undefined) updateData.status = status;
     if (clientApprovalStatus !== undefined) updateData.clientApprovalStatus = clientApprovalStatus;
+    if (targetPlatforms !== undefined) {
+      updateData.targetPlatforms = typeof targetPlatforms === 'string' ? targetPlatforms : JSON.stringify(targetPlatforms);
+    }
     if (req.body.platformCaptions !== undefined) {
       updateData.clientFeedback = JSON.stringify({ platformCaptions: req.body.platformCaptions });
     }
 
+    if (scheduledFor) {
+      updateData.status = 'SCHEDULED';
+      if (!clientApprovalStatus) {
+        updateData.clientApprovalStatus = 'APPROVED';
+      }
+
+      let targetAccountIds: string[] = Array.isArray(socialAccountIds) && socialAccountIds.length > 0 ? socialAccountIds : [];
+      if (targetAccountIds.length === 0) {
+        const brandAccounts = await prisma.socialAccount.findMany({
+          where: { brandId: content.brandId }
+        });
+        if (brandAccounts.length > 0) {
+          targetAccountIds = brandAccounts.map(a => a.id);
+        }
+      }
+
+      // Remove non-published publications and re-create fresh with new schedule
+      await prisma.publication.deleteMany({
+        where: {
+          contentId: id,
+          status: { not: 'PUBLISHED' }
+        }
+      });
+
+      for (const accId of targetAccountIds) {
+        await prisma.publication.create({
+          data: {
+            contentId: id,
+            socialAccountId: accId,
+            scheduledFor: new Date(scheduledFor),
+            status: 'QUEUED',
+            idempotencyKey: `idem_${id}_${accId}_${Date.now()}`
+          }
+        });
+      }
+    } else if (scheduledFor === null || (status === 'DRAFT' && clientApprovalStatus === 'DRAFT')) {
+      // If cleared or strictly draft, delete any non-published publications
+      await prisma.publication.deleteMany({
+        where: {
+          contentId: id,
+          status: { not: 'PUBLISHED' }
+        }
+      });
+    }
+
     const updated = await prisma.content.update({
       where: { id },
-      data: updateData
+      data: updateData,
+      include: { publications: true }
     });
 
     res.json({ success: true, content: updated });

@@ -1087,10 +1087,80 @@ router.delete('/campaigns/:id', async (req: AuthRequest, res: Response): Promise
 router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const brandId = await resolveBrandId(req);
-    const media = await prisma.mediaAsset.findMany({
+    let media = await prisma.mediaAsset.findMany({
       where: { brandId },
       orderBy: { createdAt: 'desc' }
     });
+
+    if (media.length === 0 && brandId) {
+      const defaultAssets = [
+        {
+          id: `media_asset_ceramic_${brandId}`,
+          brandId,
+          title: 'Handcrafted Ceramic Art',
+          fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
+          fileType: 'IMAGE',
+          fileSize: 420000,
+          mimeType: 'image/jpeg',
+          tags: JSON.stringify(['Art', 'Ceramics', 'Studio'])
+        },
+        {
+          id: `media_asset_scarf_${brandId}`,
+          brandId,
+          title: 'Provide 3 effortless ways to style your linen scarf',
+          fileUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=1200&q=80',
+          fileType: 'IMAGE',
+          fileSize: 380000,
+          mimeType: 'image/jpeg',
+          tags: JSON.stringify(['Fashion', 'Linen', 'Editorial'])
+        },
+        {
+          id: `media_asset_arch_${brandId}`,
+          brandId,
+          title: 'Modern Minimalist Architecture',
+          fileUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1200&q=80',
+          fileType: 'IMAGE',
+          fileSize: 510000,
+          mimeType: 'image/jpeg',
+          tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
+        },
+        {
+          id: `media_asset_pottery_${brandId}`,
+          brandId,
+          title: 'Artisan Studio Pottery',
+          fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
+          fileType: 'IMAGE',
+          fileSize: 460000,
+          mimeType: 'image/jpeg',
+          tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
+        },
+        {
+          id: `media_asset_flatlay_${brandId}`,
+          brandId,
+          title: 'Aesthetic Clean Flatlay',
+          fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
+          fileType: 'IMAGE',
+          fileSize: 390000,
+          mimeType: 'image/jpeg',
+          tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
+        }
+      ];
+
+      for (const ast of defaultAssets) {
+        try {
+          await prisma.mediaAsset.create({ data: ast });
+        } catch {
+          try {
+            await prisma.mediaAsset.update({ where: { id: ast.id }, data: ast });
+          } catch {}
+        }
+      }
+
+      media = await prisma.mediaAsset.findMany({
+        where: { brandId },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
 
     let formattedMedia = media.map(m => ({
       ...m,
@@ -1328,23 +1398,46 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
     } else if (decision === 'APPROVED') {
       const pubs = await prisma.publication.findMany({ where: { contentId: id } });
       const now = new Date();
-      for (const pub of pubs) {
-        // Never roll forward or revert already-published publications
-        if (pub.status === 'PUBLISHED') continue;
+      if (pubs.length === 0) {
+        // If content has no publications, create them for all connected brand accounts
+        const postRec = await prisma.content.findUnique({ where: { id } });
+        if (postRec) {
+          const brandAccounts = await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId } });
+          const targetSchedule = new Date();
+          targetSchedule.setDate(targetSchedule.getDate() + 1);
+          targetSchedule.setHours(10, 0, 0, 0);
+          for (const acc of brandAccounts) {
+            await prisma.publication.create({
+              data: {
+                contentId: id,
+                socialAccountId: acc.id,
+                scheduledFor: targetSchedule,
+                status: 'QUEUED',
+                idempotencyKey: `idem_${id}_${acc.id}_${Date.now()}`
+              }
+            });
+          }
+        }
+      } else {
+        for (const pub of pubs) {
+          // Never roll forward or revert already-published publications
+          if (pub.status === 'PUBLISHED') continue;
 
-        if (!pub.scheduledFor || pub.scheduledFor < now) {
-          const nextDay = new Date();
-          nextDay.setDate(nextDay.getDate() + 1);
-          nextDay.setHours(10, 0, 0, 0);
-          await prisma.publication.update({
-            where: { id: pub.id },
-            data: { scheduledFor: nextDay, status: 'QUEUED' }
-          });
-        } else {
-          await prisma.publication.update({
-            where: { id: pub.id },
-            data: { status: 'QUEUED' }
-          });
+          if (!pub.scheduledFor || pub.scheduledFor < now) {
+            const nextDay = new Date();
+            nextDay.setDate(nextDay.getDate() + 1);
+            nextDay.setHours(10, 0, 0, 0);
+            await prisma.publication.update({
+              where: { id: pub.id },
+              data: { scheduledFor: nextDay, status: 'QUEUED' }
+            });
+          } else {
+            // Keep the future scheduled slot intact
+            await prisma.publication.update({
+              where: { id: pub.id },
+              data: { status: 'QUEUED' }
+            });
+          }
         }
       }
     }
