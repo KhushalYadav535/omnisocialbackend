@@ -777,7 +777,7 @@ export class DbSyncService {
         }
       }
 
-      // 14. Ensure 3 primary brand Media Assets always exist in MediaAsset table
+      // 14. Ensure 5 distinct primary brand Media Assets always exist in MediaAsset table
       const mediaBrands = await prisma.brand.findMany();
       for (const brand of mediaBrands) {
         const defaultAssets = [
@@ -810,6 +810,26 @@ export class DbSyncService {
             fileSize: 510000,
             mimeType: 'image/jpeg',
             tags: JSON.stringify(['Workspace', 'Modern', 'Minimalist'])
+          },
+          {
+            id: `media_asset_pottery_${brand.id}`,
+            brandId: brand.id,
+            title: 'Artisan Studio Pottery',
+            fileUrl: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1200&q=80',
+            fileType: 'IMAGE',
+            fileSize: 460000,
+            mimeType: 'image/jpeg',
+            tags: JSON.stringify(['Pottery', 'Artisan', 'Craft'])
+          },
+          {
+            id: `media_asset_flatlay_${brand.id}`,
+            brandId: brand.id,
+            title: 'Aesthetic Clean Flatlay',
+            fileUrl: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
+            fileType: 'IMAGE',
+            fileSize: 390000,
+            mimeType: 'image/jpeg',
+            tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle'])
           }
         ];
 

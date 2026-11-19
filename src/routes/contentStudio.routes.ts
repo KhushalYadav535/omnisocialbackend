@@ -1115,7 +1115,14 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
         const urls = JSON.parse(c.mediaUrls || '[]');
         if (Array.isArray(urls) && urls.length > 0) {
           urls.forEach((u, uIdx) => {
-            if (u && typeof u === 'string' && !existingUrls.has(u)) {
+            const isInvalidOrPlaceholder = !u ||
+              typeof u !== 'string' ||
+              u.startsWith('blob:') ||
+              u.startsWith('data:') ||
+              u.includes('photo-1515886657613-9f3515b0c78f') ||
+              existingUrls.has(u);
+
+            if (!isInvalidOrPlaceholder) {
               existingUrls.add(u);
               extracted.push({
                 id: `content_asset_${c.id}_${uIdx}`,
