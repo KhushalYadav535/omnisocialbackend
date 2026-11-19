@@ -208,7 +208,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const hashtagsStr = typeof hashtags === 'string' ? hashtags : JSON.stringify(hashtags);
     const mediaUrlsStr = typeof mediaUrls === 'string' ? mediaUrls : JSON.stringify(mediaUrls);
     const targetPlatformsStr = typeof targetPlatforms === 'string' ? targetPlatforms : JSON.stringify(targetPlatforms);
-    const contentStatus = scheduledFor ? 'SCHEDULED' : status;
+    const contentStatus = scheduledFor ? 'SCHEDULED' : (status || 'DRAFT');
+    const initialApprovalStatus = req.body.clientApprovalStatus || (scheduledFor ? 'PENDING' : (contentStatus === 'DRAFT' ? 'DRAFT' : 'PENDING'));
 
     const result = await prisma.$transaction(async (tx) => {
       let content;
@@ -224,6 +225,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
             targetPlatforms: targetPlatformsStr,
             format,
             status: contentStatus,
+            clientApprovalStatus: initialApprovalStatus,
             firstComment: firstComment ? String(firstComment) : null,
             viralityScore: viralityScore ? Number(viralityScore) : null,
             isEvergreen: Boolean(isEvergreen),
@@ -245,6 +247,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
               targetPlatforms: targetPlatformsStr,
               format,
               status: contentStatus,
+              clientApprovalStatus: initialApprovalStatus,
               createdByUserId: req.user!.id
             }
           });
@@ -548,6 +551,76 @@ router.post('/:id/recycle-now', async (req: AuthRequest, res: Response): Promise
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to recycle evergreen post' });
+  }
+});
+
+// Update Existing Post / Draft
+router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const { title, caption, hashtags, mediaUrls, format, status, clientApprovalStatus } = req.body;
+
+    const content = await prisma.content.findFirst({
+      where: {
+        id,
+        brand: { business: { tenantId: req.user?.tenantId! } }
+      }
+    });
+
+    if (!content) {
+      res.status(404).json({ error: 'Post not found or access denied' });
+      return;
+    }
+
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (caption !== undefined) updateData.caption = caption;
+    if (hashtags !== undefined) updateData.hashtags = typeof hashtags === 'string' ? hashtags : JSON.stringify(hashtags);
+    if (mediaUrls !== undefined) updateData.mediaUrls = typeof mediaUrls === 'string' ? mediaUrls : JSON.stringify(mediaUrls);
+    if (format !== undefined) updateData.format = format;
+    if (status !== undefined) updateData.status = status;
+    if (clientApprovalStatus !== undefined) updateData.clientApprovalStatus = clientApprovalStatus;
+
+    const updated = await prisma.content.update({
+      where: { id },
+      data: updateData
+    });
+
+    res.json({ success: true, content: updated });
+  } catch (err: any) {
+    console.error('Update post error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update post' });
+  }
+});
+
+// Explicitly submit a draft for client approval
+router.post('/:id/submit-approval', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+
+    const content = await prisma.content.findFirst({
+      where: {
+        id,
+        brand: { business: { tenantId: req.user?.tenantId! } }
+      }
+    });
+
+    if (!content) {
+      res.status(404).json({ error: 'Post not found or access denied' });
+      return;
+    }
+
+    const updated = await prisma.content.update({
+      where: { id },
+      data: { clientApprovalStatus: 'PENDING' }
+    });
+
+    res.json({ success: true, message: 'Post successfully submitted to Client Approvals queue!', content: updated });
+  } catch (err: any) {
+    console.error('Submit approval error:', err);
+    res.status(500).json({ error: err.message || 'Failed to submit post for approval' });
   }
 });
 

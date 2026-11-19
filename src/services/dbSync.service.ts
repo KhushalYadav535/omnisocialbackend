@@ -647,17 +647,47 @@ export class DbSyncService {
         }
       }
 
-      // Also remove any undeletable leftover QA T11 test drops
+      // Also remove any undeletable leftover QA T11 / T12 test drops
       await prisma.publication.deleteMany({
         where: {
-          content: {
-            title: { contains: 'QA T11', mode: 'insensitive' }
-          }
+          OR: [
+            { content: { title: { contains: 'QA T11', mode: 'insensitive' } } },
+            { content: { title: { contains: 'QA T12', mode: 'insensitive' } } },
+            { content: { title: { contains: 'test marker', mode: 'insensitive' } } }
+          ]
         }
       });
       await prisma.content.deleteMany({
         where: {
-          title: { contains: 'QA T11', mode: 'insensitive' }
+          OR: [
+            { title: { contains: 'QA T11', mode: 'insensitive' } },
+            { title: { contains: 'QA T12', mode: 'insensitive' } },
+            { title: { contains: 'test marker', mode: 'insensitive' } }
+          ]
+        }
+      });
+
+      // 11. Separation of DRAFTs and Approvals Queue:
+      // If a post is status = 'DRAFT' and was saved without explicit submission, ensure clientApprovalStatus is 'DRAFT'
+      await prisma.content.updateMany({
+        where: {
+          status: 'DRAFT',
+          clientApprovalStatus: 'PENDING'
+        },
+        data: {
+          clientApprovalStatus: 'DRAFT'
+        }
+      });
+
+      // 12. Handle past-due QUEUED posts older than 2 days: Mark as MISSED
+      const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      await prisma.publication.updateMany({
+        where: {
+          status: 'QUEUED',
+          scheduledFor: { lt: twoDaysAgo }
+        },
+        data: {
+          status: 'MISSED'
         }
       });
     } catch (cleanErr: any) {

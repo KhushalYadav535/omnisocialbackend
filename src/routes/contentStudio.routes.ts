@@ -1346,6 +1346,19 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
 router.post('/approvals/:id/decision', handleApprovalReview);
 router.post('/approvals/:id/review', handleApprovalReview);
 
+router.delete('/approvals/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    await prisma.publication.deleteMany({ where: { contentId: id } });
+    await prisma.contentVersion.deleteMany({ where: { contentId: id } });
+    await prisma.content.delete({ where: { id } });
+    res.json({ success: true, message: 'Approval card deleted successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete approval card' });
+  }
+});
+
 // =========================================================================
 // 9. BRAND MARKETING LAUNCHPAD (Section 7)
 // =========================================================================

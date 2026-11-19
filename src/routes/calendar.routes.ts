@@ -81,6 +81,9 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         mediaUrls = [];
       }
 
+      const isPastDue = pub.status === 'QUEUED' && pub.scheduledFor && new Date(pub.scheduledFor).getTime() < Date.now() - 24 * 60 * 60 * 1000;
+      const effectiveStatus = isPastDue ? 'MISSED' : pub.status;
+
       return {
         id: pub.id,
         publicationId: pub.id,
@@ -96,7 +99,7 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         scheduledFor: pub.scheduledFor,
         claimedAt: pub.claimedAt,
         publishedAt: pub.publishedAt,
-        status: pub.status,
+        status: effectiveStatus,
         postUrl: pub.platformPostUrl,
         errorMessage: pub.errorMessage,
         isEvergreen: pub.content?.isEvergreen || false,
