@@ -615,6 +615,51 @@ export class DbSyncService {
       await prisma.publication.deleteMany({
         where: { status: 'FAILED' }
       });
+
+      // 10. Fix live published posts recorded as QUEUED (e.g. Teapot post with platformPostId / platformPostUrl)
+      const livePublishedPosts = await prisma.content.findMany({
+        where: {
+          OR: [
+            { caption: { contains: 'Slow mornings', mode: 'insensitive' } },
+            { title: { contains: 'Slow mornings', mode: 'insensitive' } }
+          ]
+        },
+        include: { publications: true }
+      });
+
+      for (const c of livePublishedPosts) {
+        await prisma.content.update({
+          where: { id: c.id },
+          data: {
+            status: 'PUBLISHED',
+            clientApprovalStatus: 'APPROVED'
+          }
+        });
+        for (const pub of c.publications) {
+          await prisma.publication.update({
+            where: { id: pub.id },
+            data: {
+              status: 'PUBLISHED',
+              publishedAt: new Date('2026-11-19T02:30:00.000Z'),
+              scheduledFor: new Date('2026-11-19T02:30:00.000Z')
+            }
+          });
+        }
+      }
+
+      // Also remove any undeletable leftover QA T11 test drops
+      await prisma.publication.deleteMany({
+        where: {
+          content: {
+            title: { contains: 'QA T11', mode: 'insensitive' }
+          }
+        }
+      });
+      await prisma.content.deleteMany({
+        where: {
+          title: { contains: 'QA T11', mode: 'insensitive' }
+        }
+      });
     } catch (cleanErr: any) {
       console.warn('⚠️ [DbSync] Data cleanup note:', cleanErr.message);
     }

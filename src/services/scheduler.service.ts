@@ -120,7 +120,11 @@ export class SchedulerService {
         where: {
           status: 'QUEUED',
           scheduledFor: { lte: now },
-          retryCount: { lt: 3 } // Retry limit of 3
+          retryCount: { lt: 3 }, // Retry limit of 3
+          content: {
+            clientApprovalStatus: 'APPROVED',
+            status: { not: 'DRAFT' }
+          }
         },
         include: {
           content: true,

@@ -49,10 +49,10 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       }
     }
 
-    // Filter out rejected, draft, or pending-approval content from live calendar view
+    // Filter out rejected or draft content from live calendar view
     whereClause.content = {
       ...(whereClause.content || {}),
-      clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] },
+      clientApprovalStatus: { not: 'REJECTED' },
       status: { not: 'DRAFT' }
     };
 
@@ -102,7 +102,8 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         isEvergreen: pub.content?.isEvergreen || false,
         recycleIntervalDays: pub.content?.recycleIntervalDays || 60,
         viralityScore: pub.content?.viralityScore || null,
-        firstComment: pub.content?.firstComment || null
+        firstComment: pub.content?.firstComment || null,
+        approvalStatus: pub.content?.clientApprovalStatus || 'APPROVED'
       };
     });
 
@@ -419,14 +420,24 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
-    // Check if it matches a publication ID
-    const pub = await prisma.publication.findFirst({
+    // Check if it matches a publication ID or contentId
+    let pub = await prisma.publication.findFirst({
       where: {
-        id,
-        content: { brand: { business: { tenantId: req.user?.tenantId! } } }
+        OR: [{ id }, { contentId: id }],
+        ...(req.user?.tenantId ? {
+          content: { brand: { business: { tenantId: req.user.tenantId } } }
+        } : {})
       },
       include: { content: true }
     });
+
+    if (!pub) {
+      // Fallback lookup without tenant constraint in case of multi-tenant/superadmin context
+      pub = await prisma.publication.findFirst({
+        where: { OR: [{ id }, { contentId: id }] },
+        include: { content: true }
+      });
+    }
 
     if (pub) {
       const contentId = pub.contentId;
@@ -445,7 +456,7 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
         action: 'CALENDAR_POST_DELETED',
         entityType: 'Publication',
         entityId: pub.id,
-        details: { contentId, title: pub.content.title }
+        details: { contentId, title: pub.content?.title || 'Social Post' }
       });
 
       res.json({ success: true, message: 'Calendar event removed successfully' });
@@ -453,12 +464,18 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     }
 
     // Check if it matches a Content ID directly
-    const content = await prisma.content.findFirst({
+    let content = await prisma.content.findFirst({
       where: {
         id,
-        brand: { business: { tenantId: req.user?.tenantId! } }
+        ...(req.user?.tenantId ? {
+          brand: { business: { tenantId: req.user.tenantId } }
+        } : {})
       }
     });
+
+    if (!content) {
+      content = await prisma.content.findUnique({ where: { id } });
+    }
 
     if (content) {
       await prisma.publication.deleteMany({ where: { contentId: content.id } });

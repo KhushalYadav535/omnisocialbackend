@@ -215,7 +215,10 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
     if (publishedList.length > 0) {
       await prisma.content.update({
         where: { id: content.id },
-        data: { status: 'PUBLISHED' }
+        data: {
+          status: 'PUBLISHED',
+          clientApprovalStatus: 'APPROVED'
+        }
       });
     }
 

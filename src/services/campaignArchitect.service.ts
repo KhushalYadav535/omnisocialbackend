@@ -37,7 +37,7 @@ export interface GenerateRoadmapParams {
   productDescription: string;
   businessType: 'PHYSICAL_PRODUCT' | 'LOCAL_BUSINESS' | 'B2B_SERVICE' | 'CREATOR_COACH';
   campaignGoal: 'SALES' | 'LEADS' | 'AWARENESS';
-  durationDays: 7 | 14 | 30;
+  durationDays: number;
   startDate?: string;
   platforms?: string[];
   brandName?: string;
@@ -77,8 +77,17 @@ export class CampaignArchitectService {
       language = 'ENGLISH'
     } = params;
 
+    let resolvedDurationDays = durationDays;
+    const dayMatch = (productDescription || '').match(/(\d+)\s*[- ]\s*day/i);
+    if (dayMatch) {
+      const parsedDays = parseInt(dayMatch[1], 10);
+      if (parsedDays >= 1 && parsedDays <= 30) {
+        resolvedDurationDays = parsedDays;
+      }
+    }
+
     const start = new Date(startDate);
-    const end = new Date(start.getTime() + (durationDays - 1) * 86400000);
+    const end = new Date(start.getTime() + (resolvedDurationDays - 1) * 86400000);
 
     // Attempt AI Generation via OpenRouter
     try {
@@ -93,7 +102,7 @@ Context:
 - Target Audience / Demographic: "${targetAudience || 'General Ideal Customer Profile'}"
 - Tone of Voice: "${tone}" (URGENT_DIRECT = High-conversion bold punchy, STORYTELLING = Empathetic story-driven, PROFESSIONAL = Corporate authority & metrics, GENZ_VIRAL = Ultra-relatable, trendy)
 - Language Style: "${language}" ${isHinglish ? '(IMPORTANT: Write in natural Hinglish - Hindi words written in English letters, the way Indian founders and creators speak, e.g. "Bhai agar aap bhi...", "Yeh 3 galtiyan mat karna", "Dekho sach yeh hai ki...")' : '(Write in clean, engaging modern English)'}
-- Duration: ${durationDays} days
+- Duration: ${resolvedDurationDays} days
 - Target Platforms: ${platforms.join(', ')}
 - Start Date: ${start.toISOString()}
 
@@ -104,7 +113,7 @@ Core Frameworks to strictly follow:
 4. B-Roll & Visual Director: Non-technical users need simple 5-second phone video briefs (e.g. holding product, screen recording, hands typing).
 
 CRITICAL REQUIREMENT:
-The "posts" array MUST contain exactly ${durationDays} items, one for each day from dayNumber 1 to dayNumber ${durationDays}. You MUST provide complete content for all ${durationDays} days. Do NOT output only 1 post or omit any days!
+The "posts" array MUST contain exactly ${resolvedDurationDays} items, one for each day from dayNumber 1 to dayNumber ${resolvedDurationDays}. You MUST provide complete content for all ${resolvedDurationDays} days. Do NOT output only 1 post or omit any days!
 
 Output MUST be a JSON object with this exact structure:
 {
@@ -1109,37 +1118,37 @@ Return ONLY a valid raw JSON object:
     let photoGuide = 'Snap a clean, well-lit smartphone photo of your workspace or hero product angle.';
 
     if (preset === 'CUSTOMER_STORY') {
-      title = `Real Results with ${brandName}`;
-      hook = `“I was skeptical at first, but this completely changed how I handle ${cleanTopic.slice(0, 35)}.”`;
+      title = `Real Results with ${cleanTopic.slice(0, 30)}`;
+      hook = `“I was skeptical at first, but this completely changed how I experience ${cleanTopic.slice(0, 35)}.”`;
       whyWorks = 'Social Proof Rule: Authentic customer outcomes eliminate hesitation 10x faster than traditional sales copy.';
       phase = 'SOCIAL_PROOF';
       phaseLabel = 'Customer Win & Case Study';
       phaseColor = 'emerald';
-      caption = `Don't just take our word for it.\n\nHere is what happened after switching to ${brandName} for ${cleanTopic}:\n\n💬 “Saved 2+ hours every single day.”\n💬 “Felt like having a dedicated expert in my pocket.”\n\nDrop a comment below if you want the full breakdown!`;
+      caption = `“I was skeptical at first, but ${cleanTopic} completely elevated our routine.”\n\nWhen you invest in quality craftsmanship with ${brandName}, the difference is felt immediately:\n\n✨ Thoughtful design crafted to last\n✨ Premium materials and attention to detail\n✨ A calmer, more intentional experience\n\nDrop a comment below if you would like more details!`;
       bRollGuide = 'Phone camera brief: Screen recording of client review or customer holding product with a smile.';
       photoGuide = 'Upload screenshot of a real review or customer testimonial message.';
     } else if (preset === 'BEHIND_SCENES') {
-      title = `Behind The Scenes at ${brandName}`;
-      hook = `Here is what nobody tells you about mastering ${cleanTopic.slice(0, 35)} in 2026:`;
+      title = `Behind The Scenes: ${cleanTopic.slice(0, 30)}`;
+      hook = `Here is what goes into crafting ${cleanTopic.slice(0, 35)}:`;
       whyWorks = 'Authenticity Rule: Behind-the-scenes human craftsmanship builds 3x more emotional loyalty than polished ads.';
       phase = 'BEHIND_SCENES';
       phaseLabel = 'Behind The Scenes';
       phaseColor = 'blue';
-      caption = `Most people think great results come from complex systems.\n\nBehind the scenes, we engineered ${brandName} to do one thing: remove all friction from ${cleanTopic}.\n\nDouble tap if you appreciate simple, reliable craftsmanship!`;
-      bRollGuide = 'Phone camera brief: 5-second candid clip of your hands typing, sketches on desk, or packing orders in natural daylight.';
+      caption = `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`;
+      bRollGuide = 'Phone camera brief: 5-second candid clip of your hands typing, sketches on desk, or working in natural daylight.';
       photoGuide = 'Candid desk flat-lay or workstation photo with natural window sunlight.';
     } else if (preset === 'SPECIAL_PROMO') {
-      title = `Special Limited-Time Offer: ${brandName}`;
-      hook = `🚨 SPECIAL ANNOUNCEMENT: Get priority access to ${brandName} before doors close!`;
+      title = `Special Feature: ${cleanTopic.slice(0, 30)}`;
+      hook = `🚨 Introducing our latest release: ${cleanTopic.slice(0, 35)}!`;
       whyWorks = 'Scarcity & Urgency: Clear deadlines turn interested browsers into paying customers immediately.';
       phase = 'URGENCY_CLOSE';
       phaseLabel = 'Limited-Time Launch';
       phaseColor = 'rose';
-      caption = `For the next 48 hours only, we are unlocking our exclusive launch package for ${cleanTopic}.\n\nHere is what you get:\n✅ Full access to ${brandName}\n✅ 1-on-1 priority onboarding\n✅ 100% satisfaction guarantee\n\nComment "OFFER" right now to grab your access code!`;
+      caption = `Introducing our latest collection: ${cleanTopic}.\n\nCrafted with dedication by ${brandName}, each piece is designed for those who value authenticity, thoughtful materials, and enduring quality.\n\nAvailable now for a limited window.\n\nTap the link in bio or comment below to explore!`;
       bRollGuide = 'Phone camera brief: Dynamic video pointing to caption with animated urgency text overlay.';
       photoGuide = 'High-contrast product shot with bold promotional badge.';
     } else {
-      caption = `Ever feel like you are working twice as hard when trying to manage ${cleanTopic}?\n\nHere are 3 quick rules to fix it today:\n1. Stop overcomplicating manual steps.\n2. Use a battle-tested automation framework.\n3. Measure real outcome over busywork.\n\nComment "GUIDE" below and we will DM you the step-by-step checklist!`;
+      caption = `Start your day with intention.\n\n${cleanTopic} brings calm, focus, and ritual to your daily routine. Crafted by ${brandName} with dedication to quality.\n\nWhat is your favorite part of your daily ritual? Share below!`;
     }
 
     const ar = isReel ? '9:16' : '1:1';

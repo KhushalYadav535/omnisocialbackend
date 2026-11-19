@@ -249,6 +249,9 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
       const pubs = await prisma.publication.findMany({ where: { contentId } });
       const now = new Date();
       for (const pub of pubs) {
+        // Never roll forward or revert already-published publications
+        if (pub.status === 'PUBLISHED') continue;
+
         if (!pub.scheduledFor || pub.scheduledFor < now) {
           const nextDay = new Date();
           nextDay.setDate(nextDay.getDate() + 1);

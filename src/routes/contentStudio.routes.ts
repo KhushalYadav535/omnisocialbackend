@@ -1262,10 +1262,25 @@ router.get('/approvals', async (req: AuthRequest, res: Response): Promise<void> 
       i === arr.findIndex(item => item.title?.trim().toLowerCase() === c.title?.trim().toLowerCase())
     );
 
+    const mappedApprovals = uniqueApprovals.map(c => {
+      let mediaUrls: string[] = [];
+      try {
+        mediaUrls = typeof c.mediaUrls === 'string' ? JSON.parse(c.mediaUrls) : (c.mediaUrls || []);
+      } catch {
+        mediaUrls = c.mediaUrls ? [c.mediaUrls] : [];
+      }
+      const firstPub = c.publications?.[0];
+      return {
+        ...c,
+        mediaUrls,
+        scheduledFor: firstPub?.scheduledFor || null
+      };
+    });
+
     res.json({
       success: true,
-      approvals: uniqueApprovals,
-      pendingContents: uniqueApprovals
+      approvals: mappedApprovals,
+      pendingContents: mappedApprovals
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch approvals' });
@@ -1302,6 +1317,9 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
       const pubs = await prisma.publication.findMany({ where: { contentId: id } });
       const now = new Date();
       for (const pub of pubs) {
+        // Never roll forward or revert already-published publications
+        if (pub.status === 'PUBLISHED') continue;
+
         if (!pub.scheduledFor || pub.scheduledFor < now) {
           const nextDay = new Date();
           nextDay.setDate(nextDay.getDate() + 1);
