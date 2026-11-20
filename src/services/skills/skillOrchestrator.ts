@@ -46,8 +46,20 @@ export class SkillOrchestrator {
       };
     }
 
+    // 2B. Social Post Copywriting (Prioritized before idea brainstormer so "post with hook" does not trigger idea discovery)
+    if (p.includes('social post') || p.includes('generate post') || p.includes('craft a') || p.includes('write a post') || p.includes('social copy') || p.includes('post caption')) {
+      return {
+        intent: 'Draft engaging platform-specific social copy',
+        primarySkillId: 'social-post-copywriter',
+        steps: [
+          { stepNumber: 1, skillId: 'social-post-copywriter', name: 'Copy Generation', status: 'PENDING', description: 'Craft post copy, hook, CTA and hashtags' },
+          { stepNumber: 2, skillId: 'brand-voice-quality-reviewer', name: 'Brand Voice Audit', status: 'PENDING', description: 'Review tone and verify platform fit' }
+        ]
+      };
+    }
+
     // 3. Content Ideas / Topics
-    if (p.includes('idea') || p.includes('brainstorm') || p.includes('topic') || p.includes('hook')) {
+    if (p.includes('idea') || p.includes('brainstorm') || p.includes('topic') || p.includes('angles')) {
       return {
         intent: 'Brainstorm high-leverage content ideas and angles',
         primarySkillId: 'content-ideas-generator',

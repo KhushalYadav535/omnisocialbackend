@@ -115,40 +115,41 @@ Return STRICTLY valid JSON with this exact schema (replace score placeholders wi
       const lines = caption.trim().split('\n').filter(l => l.trim().length > 0);
       const firstLine = lines[0] || '';
       const hasNumber = /\d+/.test(firstLine);
-      const hasCuriosityWords = /(secret|mistake|why|how to|stop|never|truth|blueprint|rules|hacks|lessons|guide|step|ways|revealed)/i.test(firstLine);
-      const hookScore = Math.min(25, 6 + (hasNumber ? 6 : 0) + (hasCuriosityWords ? 7 : 0) + (firstLine.length < 80 ? 4 : 0));
+      const hasCuriosityWords = /(secret|mistake|why|how to|stop|never|truth|blueprint|rules|hacks|lessons|guide|step|ways|revealed|unlock|strategy|framework|scaling|growth)/i.test(firstLine);
+      const isConciseHook = firstLine.length > 10 && firstLine.length < 120;
+      const hookScore = Math.min(25, 12 + (hasNumber ? 4 : 0) + (hasCuriosityWords ? 5 : 0) + (isConciseHook ? 4 : 0));
 
       const hasParagraphs = lines.length >= 2;
-      const hasBulletOrEmoji = /[\u{1F300}-\u{1F9FF}•\-\*]/u.test(caption);
-      const readabilityScore = Math.min(20, 5 + (hasParagraphs ? 6 : 0) + (hasBulletOrEmoji ? 5 : 0) + (caption.length > 80 && caption.length < 900 ? 4 : 0));
+      const hasBulletOrEmoji = /[\u{1F300}-\u{1F9FF}•\-\*✅✨📌👉💬⚡]/u.test(caption);
+      const readabilityScore = Math.min(20, 8 + (hasParagraphs ? 5 : 0) + (hasBulletOrEmoji ? 4 : 0) + (caption.length > 60 && caption.length < 1200 ? 3 : 0));
 
-      const hasStorytelling = /(I|we|my|our|journey|failed|learned|realized|client|struggled|result|growth|experience|discovered)/i.test(caption);
-      const emotionalScore = Math.min(20, 5 + (hasStorytelling ? 7 : 0) + (caption.includes('?') ? 5 : 0));
+      const hasStorytelling = /(I|we|my|our|journey|failed|learned|realized|client|struggled|result|growth|experience|discovered|benchmark|team|vision)/i.test(caption);
+      const emotionalScore = Math.min(20, 10 + (hasStorytelling ? 5 : 0) + (caption.includes('?') ? 5 : 0));
 
-      const hasCTA = /(comment|dm|share|thoughts|link|save|below|swipe|tap|read more|tell us|what do you think|\?)/i.test(lines[lines.length - 1] || '');
-      const ctaScore = Math.min(20, 4 + (hasCTA ? 11 : 0) + (caption.includes('?') ? 4 : 0));
+      const hasCTA = /(comment|dm|share|thoughts|link|save|below|swipe|tap|read more|tell us|what do you think|\?|repost)/i.test(lines[lines.length - 1] || caption);
+      const ctaScore = Math.min(20, 8 + (hasCTA ? 8 : 0) + (caption.includes('?') ? 4 : 0));
 
       const tagCount = (caption.match(/#\w+/g) || []).length + (hashtags ? hashtags.length : 0);
-      const hashtagScore = Math.min(15, tagCount === 0 ? 3 : tagCount >= 3 && tagCount <= 7 ? 14 : 8);
+      const hashtagScore = Math.min(15, tagCount === 0 ? 5 : tagCount >= 2 && tagCount <= 8 ? 15 : 10);
 
-      const totalScore = hookScore + readabilityScore + emotionalScore + ctaScore + hashtagScore;
+      const totalScore = Math.min(hookScore + readabilityScore + emotionalScore + ctaScore + hashtagScore, 96);
       const calcGrade: 'A+' | 'A' | 'B' | 'C' | 'D' =
-        totalScore >= 88 ? 'A+' : totalScore >= 78 ? 'A' : totalScore >= 65 ? 'B' : totalScore >= 50 ? 'C' : 'D';
+        totalScore >= 90 ? 'A+' : totalScore >= 80 ? 'A' : totalScore >= 68 ? 'B' : totalScore >= 50 ? 'C' : 'D';
 
       return {
         score: totalScore,
         grade: calcGrade,
-        verdict: totalScore >= 80
-          ? 'High-retention draft with compelling hook and mobile-optimized structure.'
-          : totalScore >= 65
-          ? 'Solid baseline with good engagement triggers; opening line can be punchier.'
-          : 'Developing draft: needs stronger line-1 hook and clear comment call-to-action.',
+        verdict: totalScore >= 88
+          ? 'High-retention draft with compelling hook, whitespace formatting, and verified algorithmic reach.'
+          : totalScore >= 75
+          ? 'Solid baseline with good engagement triggers; opening hook and whitespace are well-balanced.'
+          : 'Developing draft: expand line breaks and include a clear call-to-action question.',
         metrics: {
-          hookStrength: { score: hookScore, max: 25, feedback: hasNumber || hasCuriosityWords ? 'Strong curiosity triggers in opening hook' : 'Make line 1 more contrarian or specific' },
+          hookStrength: { score: hookScore, max: 25, feedback: hasNumber || hasCuriosityWords ? 'Strong curiosity triggers in opening hook' : 'Clear opening value proposition' },
           readabilitySpacing: { score: readabilityScore, max: 20, feedback: hasParagraphs ? 'Clean line breaks suitable for mobile dwell time' : 'Add line breaks every 1-2 sentences' },
-          emotionalResonance: { score: emotionalScore, max: 20, feedback: hasStorytelling ? 'Good relatable storytelling tone' : 'Add real human context or tension' },
-          callToAction: { score: ctaScore, max: 20, feedback: hasCTA ? 'Clear conversion action at end of post' : 'Ask audience a specific debate question' },
-          hashtagRelevance: { score: hashtagScore, max: 15, feedback: `${tagCount} hashtags detected (${tagCount >= 3 ? 'optimal distribution' : 'add 3-5 niche tags'})` }
+          emotionalResonance: { score: emotionalScore, max: 20, feedback: hasStorytelling ? 'Good relatable authority tone' : 'Add real human context or perspective' },
+          callToAction: { score: ctaScore, max: 20, feedback: hasCTA ? 'Clear conversion action at end of post' : 'Ask audience a specific discussion question' },
+          hashtagRelevance: { score: hashtagScore, max: 15, feedback: `${tagCount} hashtags detected (${tagCount >= 2 ? 'optimal discoverability distribution' : 'add 2-5 niche tags'})` }
         },
         keyStrengths: [
           hasNumber || hasCuriosityWords ? 'High click-through opening hook' : 'Direct and punchy phrasing',
