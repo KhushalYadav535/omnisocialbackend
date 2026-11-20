@@ -93,6 +93,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     if (status && typeof status === 'string') {
       whereClause.status = status.toUpperCase();
+      if (whereClause.status === 'DRAFT' && !req.query.clientApprovalStatus) {
+        whereClause.clientApprovalStatus = 'DRAFT';
+      }
+    }
+    if (req.query.clientApprovalStatus && typeof req.query.clientApprovalStatus === 'string') {
+      whereClause.clientApprovalStatus = String(req.query.clientApprovalStatus).toUpperCase();
     }
     if (format && typeof format === 'string') {
       whereClause.format = format.toUpperCase();

@@ -672,6 +672,19 @@ export class DbSyncService {
         console.warn('⚠️ [DbSync] QA cleanup note:', cleanQaErr.message);
       }
 
+      // Ensure approved items are never left in DRAFT status
+      try {
+        await prisma.content.updateMany({
+          where: {
+            status: 'DRAFT',
+            clientApprovalStatus: 'APPROVED'
+          },
+          data: {
+            status: 'SCHEDULED'
+          }
+        });
+      } catch {}
+
       // 11. Handle past-due QUEUED publications and scheduled content: Mark as MISSED
       const now = new Date();
       await prisma.publication.updateMany({
