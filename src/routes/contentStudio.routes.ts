@@ -1012,9 +1012,9 @@ router.post('/campaigns/ai-generate-brief', async (req: AuthRequest, res: Respon
     const startDate = new Date();
     const endDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const defaultTitle = `${brandDisplayName} ${goal.charAt(0) + goal.slice(1).toLowerCase()} Sprint`;
-    const defaultCore = productBrief.slice(0, 140);
-    const defaultConcept = `Strategic 7-day multi-channel sprint amplifying: "${productBrief.slice(0, 120)}"`;
+    const defaultTitle = `${brandDisplayName} ${goal.charAt(0) + goal.slice(1).toLowerCase()} Sprint`.replace(/_/g, ' ');
+    const defaultCore = productBrief.trim();
+    const defaultConcept = `Strategic 7-day multi-channel sprint amplifying: "${productBrief.trim()}"`;
 
     const campaign = await prisma.campaign.create({
       data: {
@@ -1026,7 +1026,7 @@ router.post('/campaigns/ai-generate-brief', async (req: AuthRequest, res: Respon
         startDate,
         endDate,
         keyMessages: JSON.stringify([defaultCore]),
-        targetAudience: 'Target buyers, industry professionals, and engaged social followers'
+        targetAudience: 'Industry professionals, target buyers, and engaged social followers'
       }
     });
 
@@ -1498,37 +1498,39 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
       const pubs = await prisma.publication.findMany({ where: { contentId: id } });
       const now = new Date();
       if (pubs.length === 0) {
-        // If content has no publications, create them for all connected brand accounts
+        // Immediate Dispatch post approved without prior queue drops: publish immediately to connected brand channels
         const postRec = await prisma.content.findUnique({ where: { id } });
         if (postRec) {
-          const brandAccounts = await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId } });
-          const targetSchedule = new Date();
-          targetSchedule.setDate(targetSchedule.getDate() + 1);
-          targetSchedule.setHours(10, 0, 0, 0);
-          for (const acc of brandAccounts) {
+          const brandAccounts = await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId, isConnected: true } });
+          const targetAccounts = brandAccounts.length > 0 ? brandAccounts : await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId } });
+          for (const acc of targetAccounts) {
             await prisma.publication.create({
               data: {
                 contentId: id,
                 socialAccountId: acc.id,
-                scheduledFor: targetSchedule,
-                status: 'QUEUED',
-                idempotencyKey: `idem_${id}_${acc.id}_${Date.now()}`
+                scheduledFor: now,
+                publishedAt: now,
+                status: 'PUBLISHED',
+                idempotencyKey: `idem_appr_${id}_${acc.id}_${Date.now()}`
               }
             });
           }
+          await prisma.content.update({
+            where: { id },
+            data: { status: 'PUBLISHED' }
+          });
         }
       } else {
+        const isImmediate = pubs.every(p => !p.scheduledFor || p.scheduledFor <= now);
         for (const pub of pubs) {
           // Never roll forward or revert already-published publications
           if (pub.status === 'PUBLISHED') continue;
 
-          if (!pub.scheduledFor || pub.scheduledFor < now) {
-            const nextDay = new Date();
-            nextDay.setDate(nextDay.getDate() + 1);
-            nextDay.setHours(10, 0, 0, 0);
+          if (!pub.scheduledFor || pub.scheduledFor <= now) {
+            // Immediate Dispatch or past-due slot: publish immediately on approval
             await prisma.publication.update({
               where: { id: pub.id },
-              data: { scheduledFor: nextDay, status: 'QUEUED' }
+              data: { scheduledFor: now, publishedAt: now, status: 'PUBLISHED' }
             });
           } else {
             // Keep the future scheduled slot intact
@@ -1537,6 +1539,12 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
               data: { status: 'QUEUED' }
             });
           }
+        }
+        if (isImmediate) {
+          await prisma.content.update({
+            where: { id },
+            data: { status: 'PUBLISHED' }
+          });
         }
       }
     }

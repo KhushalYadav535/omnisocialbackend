@@ -176,6 +176,24 @@ router.get('/public/:token', async (req: Request, res: Response): Promise<void> 
       // Scrub any leftover yellow sweatpants fallback
       mediaUrls = mediaUrls.filter(u => !u.includes('photo-1515886657613-9f3515b0c78f'));
 
+      // Extract human-readable feedback note only (never raw JSON metadata)
+      let cleanClientFeedback: string | null = null;
+      if (c.clientFeedback) {
+        const trimmed = c.clientFeedback.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object') {
+              cleanClientFeedback = parsed.note || parsed.feedback || parsed.clientNote || null;
+            }
+          } catch {
+            cleanClientFeedback = null;
+          }
+        } else {
+          cleanClientFeedback = trimmed;
+        }
+      }
+
       return {
         id: c.id,
         title: c.title,
@@ -186,7 +204,7 @@ router.get('/public/:token', async (req: Request, res: Response): Promise<void> 
         format: c.format,
         status: c.status,
         clientApprovalStatus: c.clientApprovalStatus || 'PENDING',
-        clientFeedback: c.clientFeedback || null,
+        clientFeedback: cleanClientFeedback,
         scheduledFor: c.publications?.[0]?.scheduledFor || null,
         createdAt: c.createdAt
       };
@@ -248,22 +266,50 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
     if (action === 'APPROVE') {
       const pubs = await prisma.publication.findMany({ where: { contentId } });
       const now = new Date();
-      for (const pub of pubs) {
-        // Never roll forward or revert already-published publications
-        if (pub.status === 'PUBLISHED') continue;
 
-        if (!pub.scheduledFor || pub.scheduledFor < now) {
-          const nextDay = new Date();
-          nextDay.setDate(nextDay.getDate() + 1);
-          nextDay.setHours(10, 0, 0, 0);
-          await prisma.publication.update({
-            where: { id: pub.id },
-            data: { scheduledFor: nextDay, status: 'QUEUED' }
+      if (pubs.length === 0) {
+        // Immediate Dispatch post approved without prior queue drops
+        const brandAccounts = await prisma.socialAccount.findMany({
+          where: { brandId: content.brandId, isConnected: true }
+        });
+        const targetAccounts = brandAccounts.length > 0 ? brandAccounts : await prisma.socialAccount.findMany({ where: { brandId: content.brandId } });
+        for (const acc of targetAccounts) {
+          await prisma.publication.create({
+            data: {
+              contentId,
+              socialAccountId: acc.id,
+              scheduledFor: now,
+              publishedAt: now,
+              status: 'PUBLISHED',
+              idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
+            }
           });
-        } else {
-          await prisma.publication.update({
-            where: { id: pub.id },
-            data: { status: 'QUEUED' }
+        }
+        await prisma.content.update({
+          where: { id: contentId },
+          data: { status: 'PUBLISHED' }
+        });
+      } else {
+        const isImmediate = pubs.every(p => !p.scheduledFor || p.scheduledFor <= now);
+        for (const pub of pubs) {
+          if (pub.status === 'PUBLISHED') continue;
+
+          if (!pub.scheduledFor || pub.scheduledFor <= now) {
+            await prisma.publication.update({
+              where: { id: pub.id },
+              data: { scheduledFor: now, publishedAt: now, status: 'PUBLISHED' }
+            });
+          } else {
+            await prisma.publication.update({
+              where: { id: pub.id },
+              data: { status: 'QUEUED' }
+            });
+          }
+        }
+        if (isImmediate) {
+          await prisma.content.update({
+            where: { id: contentId },
+            data: { status: 'PUBLISHED' }
           });
         }
       }

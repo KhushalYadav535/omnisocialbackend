@@ -127,6 +127,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const enriched = contents.map(c => {
       let platformCaptions: Record<string, string> | null = null;
       let feedbackScheduledFor: string | null = null;
+      let cleanFeedback: string | null = null;
       if (c.clientFeedback) {
         try {
           const parsed = JSON.parse(c.clientFeedback);
@@ -137,8 +138,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
             if (parsed.scheduledFor) {
               feedbackScheduledFor = parsed.scheduledFor;
             }
+            cleanFeedback = parsed.note || parsed.feedback || parsed.clientNote || null;
+          } else if (typeof parsed === 'string') {
+            cleanFeedback = parsed;
           }
-        } catch {}
+        } catch {
+          cleanFeedback = c.clientFeedback;
+        }
       }
 
       return {
@@ -158,7 +164,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
         recycleIntervalDays: c.recycleIntervalDays,
         lastRecycledAt: c.lastRecycledAt,
         clientApprovalStatus: c.clientApprovalStatus,
-        clientFeedback: c.clientFeedback,
+        clientFeedback: cleanFeedback,
         platformCaptions,
         createdByUserId: c.createdByUserId,
         createdAt: c.createdAt,
@@ -486,6 +492,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
 
     let feedbackScheduledFor: string | null = null;
     let platformCaptions: Record<string, string> | null = null;
+    let cleanFeedback: string | null = null;
     if (content.clientFeedback) {
       try {
         const parsed = JSON.parse(content.clientFeedback);
@@ -496,8 +503,13 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
           if (parsed.scheduledFor) {
             feedbackScheduledFor = parsed.scheduledFor;
           }
+          cleanFeedback = parsed.note || parsed.feedback || parsed.clientNote || null;
+        } else if (typeof parsed === 'string') {
+          cleanFeedback = parsed;
         }
-      } catch {}
+      } catch {
+        cleanFeedback = content.clientFeedback;
+      }
     }
 
     res.json({
@@ -513,7 +525,7 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         format: content.format,
         status: content.status,
         clientApprovalStatus: content.clientApprovalStatus,
-        clientFeedback: content.clientFeedback,
+        clientFeedback: cleanFeedback,
         platformCaptions,
         scheduledFor: content.publications?.[0]?.scheduledFor || feedbackScheduledFor || null,
         createdByUserId: content.createdByUserId,

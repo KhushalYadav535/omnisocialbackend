@@ -269,9 +269,9 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
       };
     });
 
-    // Deduplicate posts by title to prevent duplicate rows in analytics list
+    // Deduplicate posts by title + platform so all published channel drops are represented
     const uniqueBestPerformingPosts = bestPerformingPosts.filter((p, i, arr) =>
-      i === arr.findIndex(item => item.title?.trim().toLowerCase() === p.title?.trim().toLowerCase())
+      i === arr.findIndex(item => `${item.title?.trim().toLowerCase()}_${item.platform}` === `${p.title?.trim().toLowerCase()}_${p.platform}`)
     );
 
     // Meta Graph API Insights Check
