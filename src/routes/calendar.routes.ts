@@ -100,7 +100,12 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         claimedAt: pub.claimedAt,
         publishedAt: pub.publishedAt,
         status: effectiveStatus,
-        postUrl: pub.platformPostUrl,
+        postUrl: pub.platformPostUrl || (effectiveStatus === 'PUBLISHED' && pub.platformPostId ? (
+          pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/${pub.platformPostId}` :
+          pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.platformPostId}` :
+          `https://www.facebook.com/${pub.platformPostId}`
+        ) : pub.platformPostUrl),
+        platformPostId: pub.platformPostId,
         errorMessage: pub.errorMessage,
         isEvergreen: pub.content?.isEvergreen || false,
         recycleIntervalDays: pub.content?.recycleIntervalDays || 60,

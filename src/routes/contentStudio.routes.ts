@@ -937,9 +937,10 @@ router.get('/campaigns', async (req: AuthRequest, res: Response): Promise<void> 
         try { parsedKeys = JSON.parse(c.keyMessages || '[]'); } catch { parsedKeys = []; }
         return {
           ...c,
-          description: c.concept || c.objective || '',
-          goal: c.objective || 'AWARENESS',
-          coreMessage: parsedKeys[0] || c.concept || '',
+          name: (c.name || 'Campaign').replace(/_/g, ' '),
+          description: c.concept && c.concept !== c.objective ? c.concept.replace(/_/g, ' ') : `${(c.objective || 'CAMPAIGN').replace(/_/g, ' ')} sprint deliverables and strategic messaging.`,
+          goal: (c.objective || 'AWARENESS').replace(/_/g, ' '),
+          coreMessage: (parsedKeys[0] || (c.concept && c.concept !== c.objective ? c.concept : '')).replace(/_/g, ' '),
           keyMessages: parsedKeys
         };
       })
