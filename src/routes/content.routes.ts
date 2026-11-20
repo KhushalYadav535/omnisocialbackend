@@ -120,11 +120,17 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     const enriched = contents.map(c => {
       let platformCaptions: Record<string, string> | null = null;
+      let feedbackScheduledFor: string | null = null;
       if (c.clientFeedback) {
         try {
           const parsed = JSON.parse(c.clientFeedback);
-          if (parsed && parsed.platformCaptions) {
-            platformCaptions = parsed.platformCaptions;
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.platformCaptions) {
+              platformCaptions = parsed.platformCaptions;
+            }
+            if (parsed.scheduledFor) {
+              feedbackScheduledFor = parsed.scheduledFor;
+            }
           }
         } catch {}
       }
@@ -153,7 +159,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
         updatedAt: c.updatedAt,
         brandName: c.brand?.name,
         authorName: c.createdByUser?.name,
-        scheduledFor: c.publications?.[0]?.scheduledFor || null,
+        scheduledFor: c.publications?.[0]?.scheduledFor || feedbackScheduledFor || null,
         publications: c.publications.map(p => ({
           id: p.id,
           contentId: p.contentId,
@@ -222,8 +228,13 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const hashtagsStr = typeof hashtags === 'string' ? hashtags : JSON.stringify(hashtags);
     const mediaUrlsStr = typeof mediaUrls === 'string' ? mediaUrls : JSON.stringify(mediaUrls);
     const targetPlatformsStr = typeof targetPlatforms === 'string' ? targetPlatforms : JSON.stringify(targetPlatforms);
-    const contentStatus = scheduledFor ? 'SCHEDULED' : (status || 'DRAFT');
-    const initialApprovalStatus = req.body.clientApprovalStatus || (scheduledFor ? 'PENDING' : (contentStatus === 'DRAFT' ? 'DRAFT' : 'PENDING'));
+    const contentStatus = status === 'DRAFT' ? 'DRAFT' : (scheduledFor ? 'SCHEDULED' : (status || 'DRAFT'));
+    const initialApprovalStatus = req.body.clientApprovalStatus || (contentStatus === 'DRAFT' ? 'DRAFT' : (scheduledFor ? 'PENDING' : 'PENDING'));
+
+    const feedbackObj: any = {};
+    if (req.body.platformCaptions) feedbackObj.platformCaptions = req.body.platformCaptions;
+    if (scheduledFor) feedbackObj.scheduledFor = new Date(scheduledFor).toISOString();
+    const initialFeedback = Object.keys(feedbackObj).length > 0 ? JSON.stringify(feedbackObj) : undefined;
 
     const result = await prisma.$transaction(async (tx) => {
       let content;
@@ -248,7 +259,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
                 format,
                 status: contentStatus,
                 clientApprovalStatus: initialApprovalStatus,
-                clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
+                clientFeedback: initialFeedback,
                 firstComment: firstComment ? String(firstComment) : null,
                 viralityScore: viralityScore ? Number(viralityScore) : null,
                 isEvergreen: Boolean(isEvergreen),
@@ -295,7 +306,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
               mediaUrls: mediaUrlsStr,
               targetPlatforms: targetPlatformsStr,
               format,
-              clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined
+              clientFeedback: initialFeedback
             }
           });
         }
@@ -315,7 +326,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
               format,
               status: contentStatus,
               clientApprovalStatus: initialApprovalStatus,
-              clientFeedback: req.body.platformCaptions ? JSON.stringify({ platformCaptions: req.body.platformCaptions }) : undefined,
+              clientFeedback: initialFeedback,
               firstComment: firstComment ? String(firstComment) : null,
               viralityScore: viralityScore ? Number(viralityScore) : null,
               isEvergreen: Boolean(isEvergreen),
@@ -360,7 +371,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       });
 
       const publications: any[] = [];
-      if (scheduledFor) {
+      if (scheduledFor && contentStatus !== 'DRAFT') {
         let targetAccountIds: string[] = Array.isArray(socialAccountIds) && socialAccountIds.length > 0 ? socialAccountIds : [];
 
         // If no social accounts provided, find existing or auto-provision a default sandbox channel
@@ -467,6 +478,22 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
+    let feedbackScheduledFor: string | null = null;
+    let platformCaptions: Record<string, string> | null = null;
+    if (content.clientFeedback) {
+      try {
+        const parsed = JSON.parse(content.clientFeedback);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.platformCaptions) {
+            platformCaptions = parsed.platformCaptions;
+          }
+          if (parsed.scheduledFor) {
+            feedbackScheduledFor = parsed.scheduledFor;
+          }
+        }
+      } catch {}
+    }
+
     res.json({
       content: {
         id: content.id,
@@ -479,6 +506,10 @@ router.get('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
         targetPlatforms: content.targetPlatforms,
         format: content.format,
         status: content.status,
+        clientApprovalStatus: content.clientApprovalStatus,
+        clientFeedback: content.clientFeedback,
+        platformCaptions,
+        scheduledFor: content.publications?.[0]?.scheduledFor || feedbackScheduledFor || null,
         createdByUserId: content.createdByUserId,
         createdAt: content.createdAt,
         updatedAt: content.updatedAt,
@@ -675,11 +706,24 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     if (targetPlatforms !== undefined) {
       updateData.targetPlatforms = typeof targetPlatforms === 'string' ? targetPlatforms : JSON.stringify(targetPlatforms);
     }
+    const feedbackObj: any = {};
+    if (content.clientFeedback) {
+      try {
+        const parsed = JSON.parse(content.clientFeedback);
+        if (parsed && typeof parsed === 'object') Object.assign(feedbackObj, parsed);
+      } catch {}
+    }
     if (req.body.platformCaptions !== undefined) {
-      updateData.clientFeedback = JSON.stringify({ platformCaptions: req.body.platformCaptions });
+      feedbackObj.platformCaptions = req.body.platformCaptions;
+    }
+    if (scheduledFor !== undefined) {
+      feedbackObj.scheduledFor = scheduledFor ? new Date(scheduledFor).toISOString() : null;
+    }
+    if (Object.keys(feedbackObj).length > 0) {
+      updateData.clientFeedback = JSON.stringify(feedbackObj);
     }
 
-    if (scheduledFor) {
+    if (scheduledFor && status !== 'DRAFT') {
       updateData.status = 'SCHEDULED';
       if (!clientApprovalStatus) {
         updateData.clientApprovalStatus = 'APPROVED';
