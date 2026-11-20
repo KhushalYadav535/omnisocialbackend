@@ -1253,13 +1253,23 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
               u.startsWith('blob:') ||
               u.startsWith('data:') ||
               u.includes('photo-1515886657613-9f3515b0c78f') ||
+              u.includes('/uploads/') ||
+              u.includes('onrender.com/uploads') ||
               existingUrls.has(u);
 
             let cleanTitle = rawTitle;
             let finalUrl = u;
             let finalTags = ['ContentPost', c.format || 'Post'];
 
-            if (isSharedOrInvalid) {
+            if (lowerTitle.includes('behind the scenes') || lowerTitle.includes('behind the s')) {
+              cleanTitle = 'Behind The Scenes Agency Studio';
+              finalUrl = 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1080&h=1080&fit=crop';
+              finalTags = ['BehindTheScenes', 'Agency', 'Culture'];
+            } else if (lowerTitle.includes('spring summer') || lowerTitle.includes('announce')) {
+              cleanTitle = 'Spring Summer Collection Launch';
+              finalUrl = 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=1080&h=1080&fit=crop';
+              finalTags = ['Editorial', 'Fashion', 'Lookbook'];
+            } else if (isSharedOrInvalid) {
               const pick = curatedPostVisuals[visualIdx % curatedPostVisuals.length];
               visualIdx++;
               finalUrl = pick.url;
