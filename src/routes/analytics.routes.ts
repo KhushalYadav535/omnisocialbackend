@@ -71,7 +71,9 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
     // Build Publication Query Filter
     const pubWhere: any = {
       content: {
-        brandId: { in: brandIds }
+        brandId: { in: brandIds },
+        clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] },
+        status: { not: 'DRAFT' }
       }
     };
 

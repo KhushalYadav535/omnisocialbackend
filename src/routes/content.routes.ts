@@ -383,7 +383,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       });
 
       const publications: any[] = [];
-      if (scheduledFor && contentStatus !== 'DRAFT') {
+      if (scheduledFor && contentStatus !== 'DRAFT' && initialApprovalStatus !== 'PENDING') {
         let targetAccountIds: string[] = Array.isArray(socialAccountIds) && socialAccountIds.length > 0 ? socialAccountIds : [];
 
         // If no social accounts provided, find existing or auto-provision a default sandbox channel
@@ -741,7 +741,7 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       updateData.clientFeedback = JSON.stringify(feedbackObj);
     }
 
-    if (scheduledFor && status !== 'DRAFT') {
+    if (scheduledFor && status !== 'DRAFT' && clientApprovalStatus !== 'PENDING') {
       updateData.status = 'SCHEDULED';
       if (!clientApprovalStatus) {
         updateData.clientApprovalStatus = 'APPROVED';
@@ -776,8 +776,8 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
           }
         });
       }
-    } else if (scheduledFor === null || (status === 'DRAFT' && clientApprovalStatus === 'DRAFT')) {
-      // If cleared or strictly draft, delete any non-published publications
+    } else if (scheduledFor === null || clientApprovalStatus === 'PENDING' || (status === 'DRAFT' && clientApprovalStatus === 'DRAFT')) {
+      // If cleared, pending client approval, or strictly draft, ensure no non-published publications exist
       await prisma.publication.deleteMany({
         where: {
           contentId: id,

@@ -1089,7 +1089,7 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const brandId = await resolveBrandId(req);
 
-    // 1. Always ensure the 5 curated brand media assets exist for this brand
+    // 1. Always ensure the 12 curated brand media assets exist stably for this brand
     if (brandId) {
       const defaultAssets = [
         {
@@ -1140,6 +1140,76 @@ router.get('/media', async (req: AuthRequest, res: Response): Promise<void> => {
           fileType: 'IMAGE',
           fileSize: 390000,
           tags: JSON.stringify(['Minimalism', 'Flatlay', 'Lifestyle']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_bts_${brandId}`,
+          brandId,
+          title: 'Behind The Scenes Agency Studio',
+          fileUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 480000,
+          tags: JSON.stringify(['BehindTheScenes', 'Agency', 'Culture']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_spring_${brandId}`,
+          brandId,
+          title: 'Spring Summer Collection Launch',
+          fileUrl: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 450000,
+          tags: JSON.stringify(['Editorial', 'Fashion', 'Lookbook']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_brew_${brandId}`,
+          brandId,
+          title: 'Morning Brew & Artisanal Roastery',
+          fileUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 410000,
+          tags: JSON.stringify(['Coffee', 'Lifestyle', 'Morning']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_workspace_${brandId}`,
+          brandId,
+          title: 'Minimalist Workspace & Tech Setup',
+          fileUrl: 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 520000,
+          tags: JSON.stringify(['Workspace', 'Design', 'Minimal']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_eco_${brandId}`,
+          brandId,
+          title: 'Sustainable Packaging & Eco Botanicals',
+          fileUrl: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 430000,
+          tags: JSON.stringify(['Eco', 'Sustainability', 'Green']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_styling_${brandId}`,
+          brandId,
+          title: 'Studio Creative Direction & Brand Styling',
+          fileUrl: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 490000,
+          tags: JSON.stringify(['Editorial', 'Creative', 'Styling']),
+          source: 'BRAND_ASSET'
+        },
+        {
+          id: `media_asset_leadership_${brandId}`,
+          brandId,
+          title: 'Executive Leadership & Brand Strategy',
+          fileUrl: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=1080&h=1080&fit=crop',
+          fileType: 'IMAGE',
+          fileSize: 470000,
+          tags: JSON.stringify(['Leadership', 'Strategy', 'Growth']),
           source: 'BRAND_ASSET'
         }
       ];

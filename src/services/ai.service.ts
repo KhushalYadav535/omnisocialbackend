@@ -295,6 +295,7 @@ ${brandContext.bannedKeywords.length > 0 ? `- FORBIDDEN WORDS: ${brandContext.ba
 - Instagram Variant: Catchy hook, visually expressive with tasteful emojis, bullet points, CTA, followed by clean hashtag spacing.
 - LinkedIn Variant: Professional, insightful, thought-leadership style, structured spacing, high-value takeaway, and professional CTA.
 - Format Requested: ${format.toUpperCase()} (e.g. POST, REEL, STORY, CAROUSEL)
+- Current Year Context: The current year is 2026. Clamp all festive, annual, and seasonal hashtags strictly to 2026 (e.g. #Diwali2026, never emit #Diwali2023 or older years).
 
 Respond ONLY with a valid JSON object matching this schema:
 {
@@ -330,6 +331,24 @@ Format: ${format}`;
 
     const parsedJson = this.parseJsonFromResponse(response.content);
     parsedJson.characterCount = parsedJson.caption?.length || 0;
+
+    // Clamp any stale years (e.g. 2023, 2024, 2025) strictly to 2026
+    if (Array.isArray(parsedJson.hashtags)) {
+      parsedJson.hashtags = parsedJson.hashtags.map((tag: string) =>
+        typeof tag === 'string' ? tag.replace(/202[0-5]\b/g, '2026') : tag
+      );
+    }
+    if (parsedJson.caption && typeof parsedJson.caption === 'string') {
+      parsedJson.caption = parsedJson.caption.replace(/202[0-5]\b/g, '2026');
+    }
+    if (parsedJson.variants && typeof parsedJson.variants === 'object') {
+      for (const k of Object.keys(parsedJson.variants)) {
+        if (typeof parsedJson.variants[k] === 'string') {
+          parsedJson.variants[k] = parsedJson.variants[k].replace(/202[0-5]\b/g, '2026');
+        }
+      }
+    }
+
     const validated = GeneratedContentSchema.parse(parsedJson);
 
     return validated;

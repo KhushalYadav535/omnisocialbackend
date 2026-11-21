@@ -267,27 +267,49 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
       const pubs = await prisma.publication.findMany({ where: { contentId } });
       const now = new Date();
 
+      let scheduledDate: Date | null = null;
+      if (content.clientFeedback) {
+        try {
+          const parsed = JSON.parse(content.clientFeedback);
+          if (parsed && parsed.scheduledFor) {
+            const d = new Date(parsed.scheduledFor);
+            if (!isNaN(d.getTime())) scheduledDate = d;
+          }
+        } catch {}
+      }
+
+      const isFutureScheduled = scheduledDate && scheduledDate.getTime() > now.getTime();
+
       if (pubs.length === 0) {
-        // Immediate Dispatch post approved without prior queue drops
         const brandAccounts = await prisma.socialAccount.findMany({
           where: { brandId: content.brandId, isConnected: true }
         });
         const targetAccounts = brandAccounts.length > 0 ? brandAccounts : await prisma.socialAccount.findMany({ where: { brandId: content.brandId } });
         for (const acc of targetAccounts) {
+          const plat = (acc.platform || 'INSTAGRAM').toUpperCase();
+          const mockPostId = `${Date.now()}_${Math.floor(Math.random() * 899999 + 100000)}`;
+          const mockPostUrl = plat === 'LINKEDIN'
+            ? `https://www.linkedin.com/feed/update/urn:li:share:${mockPostId}`
+            : plat === 'INSTAGRAM'
+              ? `https://www.instagram.com/p/DA_${mockPostId.slice(-9)}/`
+              : `https://www.facebook.com/apexdigital/posts/${mockPostId}`;
+
           await prisma.publication.create({
             data: {
               contentId,
               socialAccountId: acc.id,
-              scheduledFor: now,
-              publishedAt: now,
-              status: 'PUBLISHED',
+              scheduledFor: isFutureScheduled ? scheduledDate! : now,
+              publishedAt: isFutureScheduled ? null : now,
+              status: isFutureScheduled ? 'QUEUED' : 'PUBLISHED',
+              platformPostId: isFutureScheduled ? null : mockPostId,
+              platformPostUrl: isFutureScheduled ? null : mockPostUrl,
               idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
             }
           });
         }
         await prisma.content.update({
           where: { id: contentId },
-          data: { status: 'PUBLISHED' }
+          data: { status: isFutureScheduled ? 'SCHEDULED' : 'PUBLISHED' }
         });
       } else {
         const isImmediate = pubs.every(p => !p.scheduledFor || p.scheduledFor <= now);
@@ -295,9 +317,24 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
           if (pub.status === 'PUBLISHED') continue;
 
           if (!pub.scheduledFor || pub.scheduledFor <= now) {
+            const pubAccount = await prisma.socialAccount.findUnique({ where: { id: pub.socialAccountId } });
+            const plat = (pubAccount?.platform || 'INSTAGRAM').toUpperCase();
+            const mockPostId = pub.platformPostId || `${Date.now()}_${Math.floor(Math.random() * 899999 + 100000)}`;
+            const mockPostUrl = pub.platformPostUrl || (plat === 'LINKEDIN'
+              ? `https://www.linkedin.com/feed/update/urn:li:share:${mockPostId}`
+              : plat === 'INSTAGRAM'
+                ? `https://www.instagram.com/p/DA_${mockPostId.slice(-9)}/`
+                : `https://www.facebook.com/apexdigital/posts/${mockPostId}`);
+
             await prisma.publication.update({
               where: { id: pub.id },
-              data: { scheduledFor: now, publishedAt: now, status: 'PUBLISHED' }
+              data: {
+                scheduledFor: now,
+                publishedAt: now,
+                status: 'PUBLISHED',
+                platformPostId: mockPostId,
+                platformPostUrl: mockPostUrl
+              }
             });
           } else {
             await prisma.publication.update({

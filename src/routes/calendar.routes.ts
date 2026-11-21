@@ -49,10 +49,10 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
       }
     }
 
-    // Filter out rejected or draft content from live calendar view
+    // Filter out rejected, pending approval, or draft content from live calendar view
     whereClause.content = {
       ...(whereClause.content || {}),
-      clientApprovalStatus: { not: 'REJECTED' },
+      clientApprovalStatus: { notIn: ['REJECTED', 'PENDING'] },
       status: { not: 'DRAFT' }
     };
 
