@@ -422,6 +422,10 @@ export class SkillRegistry {
       orderBy: { category: 'asc' }
     });
 
+    if (!records || records.length === 0) {
+      return INITIAL_SKILLS;
+    }
+
     return records.map(r => ({
       id: r.id,
       name: r.name,

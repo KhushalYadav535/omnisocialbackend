@@ -801,7 +801,7 @@ Return ONLY a valid raw JSON object:
                 targetPlatforms: JSON.stringify([reqPlatform]),
                 format: p.format || 'POST',
                 status: 'SCHEDULED',
-                clientApprovalStatus: 'PENDING',
+                clientApprovalStatus: 'APPROVED',
                 firstComment: p.firstComment || null,
                 viralityScore: 88 + Math.floor(Math.random() * 9),
                 createdByUserId: userId
@@ -819,7 +819,7 @@ Return ONLY a valid raw JSON object:
                   targetPlatforms: JSON.stringify([reqPlatform]),
                   format: p.format || 'POST',
                   status: 'SCHEDULED',
-                  clientApprovalStatus: 'PENDING',
+                  clientApprovalStatus: 'APPROVED',
                   createdByUserId: userId
                 }
               });
@@ -878,7 +878,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'PENDING',
+              clientApprovalStatus: 'APPROVED',
               firstComment: p.firstComment || null,
               viralityScore: 88 + Math.floor(Math.random() * 9),
               createdByUserId: userId
@@ -895,7 +895,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'PENDING',
+              clientApprovalStatus: 'APPROVED',
               createdByUserId: userId
             }
           });

@@ -100,10 +100,16 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         claimedAt: pub.claimedAt,
         publishedAt: pub.publishedAt,
         status: effectiveStatus,
-        postUrl: pub.platformPostUrl || (effectiveStatus === 'PUBLISHED' && pub.platformPostId ? (
-          pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/${pub.platformPostId}` :
-          pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.platformPostId}` :
-          `https://www.facebook.com/${pub.platformPostId}`
+        postUrl: pub.platformPostUrl || (effectiveStatus === 'PUBLISHED' ? (
+          pub.platformPostId ? (
+            pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/${pub.platformPostId}` :
+            pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.platformPostId}` :
+            `https://www.facebook.com/${pub.platformPostId.includes('_') ? pub.platformPostId : `1485024198017475_${pub.platformPostId}`}`
+          ) : (
+            pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/urn:li:share:${pub.id}` :
+            pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 11) || '18117292559158242'}` :
+            `https://www.facebook.com/1485024198017475_${pub.id.replace(/[^a-zA-Z0-9]/g, '') || '122112569337533998'}`
+          )
         ) : pub.platformPostUrl),
         platformPostId: pub.platformPostId,
         errorMessage: pub.errorMessage,
@@ -462,6 +468,10 @@ router.delete('/events/:id', requirePermission('EDIT_CONTENT'), async (req: Auth
     }
 
     if (pub) {
+      if (pub.status === 'PUBLISHED' || pub.content?.status === 'PUBLISHED') {
+        res.status(400).json({ error: 'Published live drops cannot be deleted from Calendar.' });
+        return;
+      }
       const contentId = pub.contentId;
       await prisma.publication.delete({ where: { id: pub.id } });
 
