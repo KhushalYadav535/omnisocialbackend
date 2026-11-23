@@ -104,16 +104,22 @@ router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
             }
           });
 
+          const txt = (item.message || '').toLowerCase();
+          const isPos = /love|loved|beautiful|stunning|great|awesome|good|amazing|best|gorgeous|perfect|craft|honest|superb|fabulous|excellent|adore|happy/i.test(txt);
+          const isNeg = /bad|terrible|worst|broken|scam|hate|poor|horrible|complaint|delay/i.test(txt);
+          const initialSentiment = isPos ? 'POSITIVE' : isNeg ? 'NEGATIVE' : 'NEUTRAL';
+          const initialScore = isPos ? 0.95 : isNeg ? 0.1 : 0.5;
+
           await prisma.classification.create({
             data: {
               interactionId: created.id,
-              sentiment: 'NEUTRAL',
-              sentimentScore: 0.5,
+              sentiment: initialSentiment,
+              sentimentScore: initialScore,
               isQuestion,
               isPricingInquiry: false,
               isLeadIntent: false,
-              isSensitiveOrComplaint: false,
-              urgencyScore: isQuestion ? 4 : 2,
+              isSensitiveOrComplaint: isNeg,
+              urgencyScore: isNeg ? 5 : isQuestion ? 4 : 2,
               rawAnalysis: 'Active Meta API synchronization ingestion',
               isOverridden: false
             }
@@ -174,16 +180,22 @@ router.post('/sync', async (req: AuthRequest, res: Response): Promise<void> => {
             }
           });
 
+          const dmTxt = (msg.message || '').toLowerCase();
+          const isDmPos = /love|loved|beautiful|stunning|great|awesome|good|amazing|best|gorgeous|perfect|craft|honest|superb|fabulous|excellent|adore|happy/i.test(dmTxt);
+          const isDmNeg = /bad|terrible|worst|broken|scam|hate|poor|horrible|complaint|delay/i.test(dmTxt);
+          const dmSentiment = isDmPos ? 'POSITIVE' : isDmNeg ? 'NEGATIVE' : 'NEUTRAL';
+          const dmScore = isDmPos ? 0.95 : isDmNeg ? 0.1 : 0.5;
+
           await prisma.classification.create({
             data: {
               interactionId: created.id,
-              sentiment: 'NEUTRAL',
-              sentimentScore: 0.5,
+              sentiment: dmSentiment,
+              sentimentScore: dmScore,
               isQuestion,
               isPricingInquiry: false,
               isLeadIntent: true,
-              isSensitiveOrComplaint: false,
-              urgencyScore: isQuestion ? 4 : 2,
+              isSensitiveOrComplaint: isDmNeg,
+              urgencyScore: isDmNeg ? 5 : isQuestion ? 4 : 2,
               rawAnalysis: 'Active Meta Messenger synchronization ingestion',
               isOverridden: false
             }

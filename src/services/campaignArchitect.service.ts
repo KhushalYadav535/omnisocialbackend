@@ -1107,6 +1107,11 @@ Return ONLY a valid raw JSON object:
     const isReel = postType === 'REEL';
     const cleanTopic = (productOrTopic || 'Our Product & Service').trim();
 
+    // Domain detection for contextual authentic copy
+    const isFood = /thali|chef|food|meal|dining|lunch|dinner|roti|sabzi|dal|chaas|menu|tiffin|subscription|curry|kitchen|cuisine|recipe|snack|dish|eat/i.test(cleanTopic);
+    const isWorkshop = /workshop|masterclass|course|class|pottery|ceramic/i.test(cleanTopic);
+    const isBakery = /bakery|baker|cake|bread|pastry|cookie|sourdough|dessert/i.test(cleanTopic);
+
     let title = `${cleanTopic.slice(0, 30)} - Quick Launch`;
     let hook = `Are you still struggling with ${cleanTopic.slice(0, 40)}? Here is the 2026 fix.`;
     let whyWorks = 'Marketing Rule: Speak directly to customer frustration within the first 3 seconds to guarantee scroll-stopping retention.';
@@ -1124,7 +1129,9 @@ Return ONLY a valid raw JSON object:
       phase = 'SOCIAL_PROOF';
       phaseLabel = 'Customer Win & Case Study';
       phaseColor = 'emerald';
-      caption = `“I was skeptical at first, but ${cleanTopic} completely elevated our routine.”\n\nWhen you invest in quality craftsmanship with ${brandName}, the difference is felt immediately:\n\n✨ Thoughtful design crafted to last\n✨ Premium materials and attention to detail\n✨ A calmer, more intentional experience\n\nDrop a comment below if you would like more details!`;
+      caption = isFood
+        ? `“I was tired of oily takeout—${cleanTopic} completely transformed our meals!”\n\nFresh home-style cooking prepared with pure ingredients by ${brandName}:\n✨ Steaming hot, wholesome recipes\n✨ Authentic flavors made without shortcuts\n✨ Delivered fresh right on time\n\nReady for a meal upgrade? Drop a comment below or DM to subscribe!`
+        : `“I was skeptical at first, but ${cleanTopic} completely elevated our routine.”\n\nWhen you invest in quality craftsmanship with ${brandName}, the difference is felt immediately:\n\n✨ Thoughtful design crafted to last\n✨ Premium materials and attention to detail\n✨ A calmer, more intentional experience\n\nDrop a comment below if you would like more details!`;
       bRollGuide = 'Phone camera brief: Screen recording of client review or customer holding product with a smile.';
       photoGuide = 'Upload screenshot of a real review or customer testimonial message.';
     } else if (preset === 'BEHIND_SCENES') {
@@ -1134,7 +1141,9 @@ Return ONLY a valid raw JSON object:
       phase = 'BEHIND_SCENES';
       phaseLabel = 'Behind The Scenes';
       phaseColor = 'blue';
-      caption = `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`;
+      caption = isFood
+        ? `Behind the scenes in the kitchen: preparing ${cleanTopic}.\n\nFrom sourcing fresh local ingredients early morning to simmering each recipe with care, ${brandName} is dedicated to honest, comforting flavors.\n\nNo artificial preservatives, no shortcuts—just food made with heart.\n\nDouble tap if you appreciate honest home cooking!`
+        : `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`;
       bRollGuide = 'Phone camera brief: 5-second candid clip of your hands typing, sketches on desk, or working in natural daylight.';
       photoGuide = 'Candid desk flat-lay or workstation photo with natural window sunlight.';
     } else if (preset === 'SPECIAL_PROMO') {
@@ -1144,11 +1153,15 @@ Return ONLY a valid raw JSON object:
       phase = 'URGENCY_CLOSE';
       phaseLabel = 'Limited-Time Launch';
       phaseColor = 'rose';
-      caption = `Introducing our latest collection: ${cleanTopic}.\n\nCrafted with dedication by ${brandName}, each piece is designed for those who value authenticity, thoughtful materials, and enduring quality.\n\nAvailable now for a limited window.\n\nTap the link in bio or comment below to explore!`;
+      caption = isFood
+        ? `Fresh release: ${cleanTopic} is now available!\n\nTreat yourself to authentic, wholesome flavors crafted with dedication by ${brandName}.\n\nLimited slots available for today's batch.\n\nTap the link or comment below to reserve yours before slots fill up!`
+        : `Introducing our latest collection: ${cleanTopic}.\n\nCrafted with dedication by ${brandName}, each piece is designed for those who value authenticity, thoughtful materials, and enduring quality.\n\nAvailable now for a limited window.\n\nTap the link in bio or comment below to explore!`;
       bRollGuide = 'Phone camera brief: Dynamic video pointing to caption with animated urgency text overlay.';
       photoGuide = 'High-contrast product shot with bold promotional badge.';
     } else {
-      caption = `Start your day with intention.\n\n${cleanTopic} brings calm, focus, and ritual to your daily routine. Crafted by ${brandName} with dedication to quality.\n\nWhat is your favorite part of your daily ritual? Share below!`;
+      caption = isFood
+        ? `Craving authentic, wholesome home meals? ${cleanTopic}.\n\nCrafted by ${brandName} with fresh ingredients, genuine care, and comforting home-cooked flavors you can rely on every single day.\n\nWhat is your ultimate favorite home comfort dish? Drop a comment below!`
+        : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat matters most to you in your daily setup? Share your thoughts below!`;
     }
 
     const ar = isReel ? '9:16' : '1:1';
