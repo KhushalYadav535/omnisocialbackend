@@ -28,9 +28,20 @@ export const ContentVariantsSchema = z.object({
   linkedin: z.string().optional().default('')
 });
 
+export const AngleVariantSchema = z.object({
+  angleLabel: z.string(),
+  style: z.string(),
+  copy: z.string(),
+  hashtags: z.array(z.string()).default([]),
+  cta: z.string().default('Explore More')
+});
+
+export type AngleVariant = z.infer<typeof AngleVariantSchema>;
+
 export const GeneratedContentSchema = z.object({
   caption: z.string().default(''),
   variants: ContentVariantsSchema.default({ facebook: '', instagram: '', linkedin: '' }),
+  angleVariants: z.array(AngleVariantSchema).optional().default([]),
   hashtags: z.array(z.string()).default([]),
   callToAction: z.string().default('Explore more'),
   characterCount: z.number().int().nonnegative().default(0)

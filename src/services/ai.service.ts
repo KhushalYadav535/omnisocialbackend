@@ -9,6 +9,8 @@ import {
   ReplySuggestionsResponseSchema,
   GeneratedContent,
   GeneratedContentSchema,
+  AngleVariant,
+  AngleVariantSchema,
   ClassificationResult,
   ClassificationResultSchema,
   OpenRouterChatMessage
@@ -17,7 +19,8 @@ import {
 export {
   ReplySuggestion,
   ClassificationResult,
-  GeneratedContent
+  GeneratedContent,
+  AngleVariant
 };
 
 export class AiService {
@@ -294,6 +297,12 @@ ${brandContext.bannedKeywords.length > 0 ? `- FORBIDDEN WORDS: ${brandContext.ba
 - Facebook Variant: Conversational, community-focused, storytelling with line breaks and clear CTA.
 - Instagram Variant: Catchy hook, visually expressive with tasteful emojis, bullet points, CTA, followed by clean hashtag spacing.
 - LinkedIn Variant: Professional, insightful, thought-leadership style, structured spacing, high-value takeaway, and professional CTA.
+- Angle Variants: Generate exactly 4 distinct strategic angles on the specific topic:
+  1. Direct Hook & Story (Storytelling angle with personal/narrative hook)
+  2. Actionable Breakdown (Framework/Listicle with practical bullet points)
+  3. Behind-The-Scenes Craft (Authentic insight/craftsmanship/process angle)
+  4. Community Discussion (Conversational question/poll to drive comments)
+  All 4 angles MUST be authentically crafted around the user's specific topic (never generic food or unrelated templates).
 - Format Requested: ${format.toUpperCase()} (e.g. POST, REEL, STORY, CAROUSEL)
 - Current Year Context: The current year is 2026. Clamp all festive, annual, and seasonal hashtags strictly to 2026 (e.g. #Diwali2026, never emit #Diwali2023 or older years).
 
@@ -305,6 +314,36 @@ Respond ONLY with a valid JSON object matching this schema:
     "instagram": "Instagram optimized text",
     "linkedin": "LinkedIn optimized text"
   },
+  "angleVariants": [
+    {
+      "angleLabel": "Direct Hook & Story",
+      "style": "Storytelling",
+      "copy": "Full storytelling caption on topic...",
+      "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
+      "cta": "Explore Now"
+    },
+    {
+      "angleLabel": "Actionable Breakdown",
+      "style": "Framework / Listicle",
+      "copy": "Full breakdown caption on topic...",
+      "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
+      "cta": "Learn More"
+    },
+    {
+      "angleLabel": "Behind-The-Scenes Craft",
+      "style": "Insight / Advice",
+      "copy": "Full behind-the-scenes caption on topic...",
+      "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
+      "cta": "Discover More"
+    },
+    {
+      "angleLabel": "Community Discussion",
+      "style": "Question / Discussion",
+      "copy": "Full community question caption on topic...",
+      "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
+      "cta": "Join Discussion"
+    }
+  ],
   "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4", "#Tag5"],
   "callToAction": "Short call to action phrase",
   "characterCount": 250
@@ -347,6 +386,18 @@ Format: ${format}`;
           parsedJson.variants[k] = parsedJson.variants[k].replace(/202[0-5]\b/g, '2026');
         }
       }
+    }
+    if (Array.isArray(parsedJson.angleVariants)) {
+      parsedJson.angleVariants = parsedJson.angleVariants.map((item: any) => {
+        if (!item || typeof item !== 'object') return item;
+        return {
+          ...item,
+          copy: typeof item.copy === 'string' ? item.copy.replace(/202[0-5]\b/g, '2026') : item.copy,
+          hashtags: Array.isArray(item.hashtags)
+            ? item.hashtags.map((t: string) => typeof t === 'string' ? t.replace(/202[0-5]\b/g, '2026') : t)
+            : []
+        };
+      });
     }
 
     const validated = GeneratedContentSchema.parse(parsedJson);

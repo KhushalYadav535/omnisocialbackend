@@ -1107,10 +1107,11 @@ Return ONLY a valid raw JSON object:
     const isReel = postType === 'REEL';
     const cleanTopic = (productOrTopic || 'Our Product & Service').trim();
 
-    // Domain detection for contextual authentic copy
-    const isFood = /thali|chef|food|meal|dining|lunch|dinner|roti|sabzi|dal|chaas|menu|tiffin|subscription|curry|kitchen|cuisine|recipe|snack|dish|eat/i.test(cleanTopic);
-    const isWorkshop = /workshop|masterclass|course|class|pottery|ceramic/i.test(cleanTopic);
-    const isBakery = /bakery|baker|cake|bread|pastry|cookie|sourdough|dessert/i.test(cleanTopic);
+    // Domain detection for contextual authentic copy (strict whole-word matching to avoid false positives like "create" matching "eat")
+    const isFood = /\b(thali|tiffin|roti|sabzi|dal|chaas|biryani|curry|caterer|restaurant|dining|lunch|dinner|food|cuisine|recipe|snack|dishes)\b/i.test(cleanTopic);
+    const isWorkshop = /\b(workshop|masterclass|course|class|pottery|ceramic)\b/i.test(cleanTopic);
+    const isBakery = /\b(bakery|baker|cake|bread|pastry|cookie|sourdough|dessert)\b/i.test(cleanTopic);
+    const isFragranceOrSoap = /\b(soap|incense|sandalwood|perfume|fragrance|candle|aromatherapy|skincare|bath|oil|botanical)\b/i.test(cleanTopic);
 
     let title = `${cleanTopic.slice(0, 30)} - Quick Launch`;
     let hook = `Are you still struggling with ${cleanTopic.slice(0, 40)}? Here is the 2026 fix.`;
@@ -1131,7 +1132,9 @@ Return ONLY a valid raw JSON object:
       phaseColor = 'emerald';
       caption = isFood
         ? `“I was tired of oily takeout—${cleanTopic} completely transformed our meals!”\n\nFresh home-style cooking prepared with pure ingredients by ${brandName}:\n✨ Steaming hot, wholesome recipes\n✨ Authentic flavors made without shortcuts\n✨ Delivered fresh right on time\n\nReady for a meal upgrade? Drop a comment below or DM to subscribe!`
-        : `“I was skeptical at first, but ${cleanTopic} completely elevated our routine.”\n\nWhen you invest in quality craftsmanship with ${brandName}, the difference is felt immediately:\n\n✨ Thoughtful design crafted to last\n✨ Premium materials and attention to detail\n✨ A calmer, more intentional experience\n\nDrop a comment below if you would like more details!`;
+        : (isFragranceOrSoap
+          ? `“I was looking for a genuinely calming aroma—${cleanTopic} completely elevated our space.”\n\nPure natural aromatics handcrafted with traditional care by ${brandName}:\n✨ Sourced from pure natural botanicals and essential oils\n✨ Calming, long-lasting aroma that centers the mind\n✨ Handcrafted in small studio batches\n\nReady for a sensory reset? Drop a comment below or DM to order!`
+          : `“I was skeptical at first, but ${cleanTopic} completely elevated our routine.”\n\nWhen you invest in quality craftsmanship with ${brandName}, the difference is felt immediately:\n\n✨ Thoughtful design crafted to last\n✨ Premium materials and attention to detail\n✨ A calmer, more intentional experience\n\nDrop a comment below if you would like more details!`);
       bRollGuide = 'Phone camera brief: Screen recording of client review or customer holding product with a smile.';
       photoGuide = 'Upload screenshot of a real review or customer testimonial message.';
     } else if (preset === 'BEHIND_SCENES') {
@@ -1143,7 +1146,9 @@ Return ONLY a valid raw JSON object:
       phaseColor = 'blue';
       caption = isFood
         ? `Behind the scenes in the kitchen: preparing ${cleanTopic}.\n\nFrom sourcing fresh local ingredients early morning to simmering each recipe with care, ${brandName} is dedicated to honest, comforting flavors.\n\nNo artificial preservatives, no shortcuts—just food made with heart.\n\nDouble tap if you appreciate honest home cooking!`
-        : `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`;
+        : (isFragranceOrSoap
+          ? `Behind the scenes with ${cleanTopic}: natural botanical extraction.\n\nFrom selecting authentic woods and flowers to hand-blending each small batch with care, ${brandName} is dedicated to honest, natural aromatics.\n\nNo artificial fillers, no synthetic shortcuts—just pure botanical craft.\n\nDouble tap if you appreciate natural artisan craftsmanship!`
+          : `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`);
       bRollGuide = 'Phone camera brief: 5-second candid clip of your hands typing, sketches on desk, or working in natural daylight.';
       photoGuide = 'Candid desk flat-lay or workstation photo with natural window sunlight.';
     } else if (preset === 'SPECIAL_PROMO') {
@@ -1155,13 +1160,17 @@ Return ONLY a valid raw JSON object:
       phaseColor = 'rose';
       caption = isFood
         ? `Fresh release: ${cleanTopic} is now available!\n\nTreat yourself to authentic, wholesome flavors crafted with dedication by ${brandName}.\n\nLimited slots available for today's batch.\n\nTap the link or comment below to reserve yours before slots fill up!`
-        : `Introducing our latest collection: ${cleanTopic}.\n\nCrafted with dedication by ${brandName}, each piece is designed for those who value authenticity, thoughtful materials, and enduring quality.\n\nAvailable now for a limited window.\n\nTap the link in bio or comment below to explore!`;
+        : (isFragranceOrSoap
+          ? `Fresh batch alert: ${cleanTopic} is now available!\n\nTreat your senses to pure, natural aromatics crafted with unhurried care by ${brandName}.\n\nLimited studio batch available for immediate dispatch.\n\nTap the link in bio or drop a comment below to secure yours today!`
+          : `Introducing our latest collection: ${cleanTopic}.\n\nCrafted with dedication by ${brandName}, each piece is designed for those who value authenticity, thoughtful materials, and enduring quality.\n\nAvailable now for a limited window.\n\nTap the link in bio or comment below to explore!`);
       bRollGuide = 'Phone camera brief: Dynamic video pointing to caption with animated urgency text overlay.';
       photoGuide = 'High-contrast product shot with bold promotional badge.';
     } else {
       caption = isFood
         ? `Craving authentic, wholesome home meals? ${cleanTopic}.\n\nCrafted by ${brandName} with fresh ingredients, genuine care, and comforting home-cooked flavors you can rely on every single day.\n\nWhat is your ultimate favorite home comfort dish? Drop a comment below!`
-        : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat matters most to you in your daily setup? Share your thoughts below!`;
+        : (isFragranceOrSoap
+          ? `Seeking a grounding, natural aroma for your daily rituals? Discover ${cleanTopic}.\n\nCrafted by ${brandName} with pure natural botanicals, authentic essential oils, and unhurried artisan care you can experience every single day.\n\nWhat is your favorite grounding scent for your home? Share your thoughts below!`
+          : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat matters most to you in your daily setup? Share your thoughts below!`);
     }
 
     const ar = isReel ? '9:16' : '1:1';

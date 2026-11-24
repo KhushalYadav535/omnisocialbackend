@@ -128,6 +128,7 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       let platformCaptions: Record<string, string> | null = null;
       let feedbackScheduledFor: string | null = null;
       let cleanFeedback: string | null = null;
+      let metadata: any = null;
       if (c.clientFeedback) {
         try {
           const parsed = JSON.parse(c.clientFeedback);
@@ -139,6 +140,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
               feedbackScheduledFor = parsed.scheduledFor;
             }
             cleanFeedback = parsed.note || parsed.feedback || parsed.clientNote || null;
+            metadata = parsed.metadata || {
+              variantIndex: parsed.variantIndex,
+              selectedCta: parsed.selectedCta,
+              style: parsed.style,
+              angleLabel: parsed.angleLabel,
+              viralityScore: c.viralityScore || parsed.viralityScore
+            };
           } else if (typeof parsed === 'string') {
             cleanFeedback = parsed;
           }
@@ -159,13 +167,14 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
         format: c.format,
         status: c.status,
         firstComment: c.firstComment,
-        viralityScore: c.viralityScore,
+        viralityScore: c.viralityScore || metadata?.viralityScore,
         isEvergreen: c.isEvergreen,
         recycleIntervalDays: c.recycleIntervalDays,
         lastRecycledAt: c.lastRecycledAt,
         clientApprovalStatus: c.clientApprovalStatus,
         clientFeedback: cleanFeedback,
         platformCaptions,
+        metadata,
         createdByUserId: c.createdByUserId,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
@@ -246,6 +255,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const feedbackObj: any = {};
     if (req.body.platformCaptions) feedbackObj.platformCaptions = req.body.platformCaptions;
     if (scheduledFor) feedbackObj.scheduledFor = new Date(scheduledFor).toISOString();
+    if (req.body.metadata) feedbackObj.metadata = req.body.metadata;
+    if (req.body.variantIndex !== undefined) feedbackObj.variantIndex = req.body.variantIndex;
+    if (req.body.selectedCta) feedbackObj.selectedCta = req.body.selectedCta;
+    if (req.body.style) feedbackObj.style = req.body.style;
+    if (req.body.angleLabel) feedbackObj.angleLabel = req.body.angleLabel;
+    if (viralityScore !== undefined) feedbackObj.viralityScore = Number(viralityScore);
     const initialFeedback = Object.keys(feedbackObj).length > 0 ? JSON.stringify(feedbackObj) : undefined;
 
     const result = await prisma.$transaction(async (tx) => {
@@ -733,6 +748,25 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
     }
     if (req.body.platformCaptions !== undefined) {
       feedbackObj.platformCaptions = req.body.platformCaptions;
+    }
+    if (req.body.metadata !== undefined) {
+      feedbackObj.metadata = req.body.metadata;
+    }
+    if (req.body.variantIndex !== undefined) {
+      feedbackObj.variantIndex = req.body.variantIndex;
+    }
+    if (req.body.selectedCta !== undefined) {
+      feedbackObj.selectedCta = req.body.selectedCta;
+    }
+    if (req.body.style !== undefined) {
+      feedbackObj.style = req.body.style;
+    }
+    if (req.body.angleLabel !== undefined) {
+      feedbackObj.angleLabel = req.body.angleLabel;
+    }
+    if (req.body.viralityScore !== undefined) {
+      updateData.viralityScore = Number(req.body.viralityScore);
+      feedbackObj.viralityScore = Number(req.body.viralityScore);
     }
     if (scheduledFor !== undefined) {
       feedbackObj.scheduledFor = scheduledFor ? new Date(scheduledFor).toISOString() : null;
