@@ -297,12 +297,12 @@ ${brandContext.bannedKeywords.length > 0 ? `- FORBIDDEN WORDS: ${brandContext.ba
 - Facebook Variant: Conversational, community-focused, storytelling with line breaks and clear CTA.
 - Instagram Variant: Catchy hook, visually expressive with tasteful emojis, bullet points, CTA, followed by clean hashtag spacing.
 - LinkedIn Variant: Professional, insightful, thought-leadership style, structured spacing, high-value takeaway, and professional CTA.
-- Angle Variants: Generate exactly 4 distinct strategic angles on the specific topic:
-  1. Direct Hook & Story (Storytelling angle with personal/narrative hook)
-  2. Actionable Breakdown (Framework/Listicle with practical bullet points)
-  3. Behind-The-Scenes Craft (Authentic insight/craftsmanship/process angle)
-  4. Community Discussion (Conversational question/poll to drive comments)
-  All 4 angles MUST be authentically crafted around the user's specific topic (never generic food or unrelated templates).
+- Angle Variants: Generate exactly 4 distinct strategic angles deeply anchored to the specific topic/brief:
+  1. Direct Hook & Story (Style: 'Storytelling' - rich narrative hook focusing on the specific scenario, setting, emotional appeal, or sensory details)
+  2. Actionable Breakdown (Style: 'Framework / Listicle' - 3 concrete, topic-specific practical bullet points, steps, or features tailored strictly to the subject matter; NEVER use corporate placeholder clichés like 'Purpose & Clarity', 'Consistent Execution', or 'Measurable Impact')
+  3. Behind-The-Scenes Craft (Style: 'Insight / Advice' - insider perspective on preparation, quality, ingredients/materials, or craftsmanship specific to the topic)
+  4. Community Discussion (Style: 'Question / Discussion' - an engaging, topic-relevant debate or open question that sparks conversation in the comments)
+  All 4 angles MUST be completely written, full-length post captions with distinct CTAs and relevant hashtags. NEVER emit skeleton bullets, generic filler copy, or unrelated templates.
 - Format Requested: ${format.toUpperCase()} (e.g. POST, REEL, STORY, CAROUSEL)
 - Current Year Context: The current year is 2026. Clamp all festive, annual, and seasonal hashtags strictly to 2026 (e.g. #Diwali2026, never emit #Diwali2023 or older years).
 
@@ -361,6 +361,7 @@ Format: ${format}`;
     const response = await OpenRouterService.createChatCompletion(messages, {
       model: config.openrouter.contentModel,
       temperature: 0.8,
+      maxTokens: 3000,
       responseFormatJson: true,
       tenantId,
       brandId: brandContext.brandId,
@@ -393,8 +394,43 @@ Format: ${format}`;
       : ['#Marketing', '#Growth', '#Strategy', '#Innovation'];
 
     if (!Array.isArray(parsedJson.angleVariants) || parsedJson.angleVariants.length < 4) {
-      const topicSnippet = rawIdea ? rawIdea.trim() : (parsedJson.caption ? parsedJson.caption.slice(0, 50) : 'our brand experience');
+      const topicSnippet = rawIdea ? rawIdea.trim() : (parsedJson.caption ? parsedJson.caption.slice(0, 60) : 'our brand experience');
       const baseCaption = parsedJson.caption || `Discover the difference with ${topicSnippet}.`;
+      const topicLower = `${rawIdea || ''} ${baseCaption}`.toLowerCase();
+
+      // Domain-aware contextual synthesis ensuring zero generic clichés
+      const isCafeOrBeverage = /\b(cafe|café|coffee|chai|tea|pakora|monsoon|rain|lakeside|brew|beverage|snack)\b/i.test(topicLower);
+      const isFootwearOrApparel = /\b(jutti|jutties|shoe|shoes|footwear|leather|artisan|embroid|handcrafted|stitched|craft|wear|fashion)\b/i.test(topicLower);
+      const isWellnessOrYoga = /\b(yoga|retreat|wellness|meditation|pranayama|mindful|peace|healing|holistic|rishikesh)\b/i.test(topicLower);
+      const isIncenseOrAroma = /\b(incense|sandalwood|fragrance|aroma|candle|perfume|essential oil|soap)\b/i.test(topicLower);
+      const isFoodOrDining = /\b(food|thali|dining|curry|meal|kitchen|chef|spices|farm|harvest)\b/i.test(topicLower);
+
+      let breakdownCopy = '';
+      let craftCopy = '';
+      let discussionCopy = '';
+
+      if (isCafeOrBeverage) {
+        breakdownCopy = `What makes the ultimate ${topicSnippet} experience:\n\n1. ☕ Freshly Brewed Spices — Slow-steeped aromatic spices crafted for deep, comforting flavor.\n2. 🌧️ Crispy Savory Pairings — Fresh, piping-hot bites prepared to order to complement every sip.\n3. 🪟 Lakeside Serenity — The gentle rhythm of raindrops and a cozy retreat from the everyday rush.\n\nSave this for your next weekend escape, or comment below to plan a visit!`;
+        craftCopy = `Behind the scenes at the counter ☕🌧️\n\nPreparing for ${topicSnippet}.\n\nThere is an art to bringing comfort to a rainy afternoon. From grinding whole cardamoms and brewing spiced tea to timing fresh savory batches as the rain rolls over the water, we treat every small detail as an invitation to slow down.\n\nThank you for making our space part of your rituals. What is your go-to rainy day comfort?`;
+        discussionCopy = `Rainy Day Poll 👇☕\n\nWhen visiting ${topicSnippet}, what is your non-negotiable comfort order?\n\nAre you Team Piping Hot Masala Chai with crispy bites, or Team Filter Coffee and quiet lakeside reading?\n\nTell us your pick below, or tag someone who needs a cozy coffee date!`;
+      } else if (isFootwearOrApparel) {
+        breakdownCopy = `Craft Details & Comfort Breakdown: ${topicSnippet}\n\nHere is why genuine hand-stitched footwear stands apart:\n\n1. 👞 Supple Natural Leather — Hand-selected, breathable materials that mold naturally to your feet over time.\n2. ✨ Traditional Hand-Embroidered Accents — Precise artisan needlework celebrating generational heritage.\n3. 👣 Cushioned Daily Wear — Double-padded soles engineered for effortless all-day comfort without pinch points.\n\nBookmark this post for your wardrobe essentials, or drop a comment to find your size!`;
+        craftCopy = `Behind the workbench 🔨✨\n\nCrafting the latest run of ${topicSnippet}.\n\nBefore a single pair is boxed, master artisans spend hours hand-cutting patterns, conditioning natural leather, and finishing delicate embroidery. In a world of mass production, slow craft creates items that endure with character.\n\nThank you for supporting traditional Indian artisan families. Which style or color do you love most?`;
+        discussionCopy = `Artisan Style Discussion 👇👠\n\nWhen styling ${topicSnippet}, how do you love wearing them most?\n\nAre you pairing them with breezy everyday handlooms, or dressing them up with festive weekend ensembles?\n\nShare your favorite combination below, or tag a friend who appreciates handcrafted elegance!`;
+      } else if (isWellnessOrYoga) {
+        breakdownCopy = `Experience & Daily Journey Breakdown: ${topicSnippet}\n\nThree pillars at the heart of our practice:\n\n1. 🧘 Restorative Daily Movement — Sunrise alignment, breathwork, and mindful flow adapted for every level.\n2. 🍃 Peaceful Natural Sanctuary — Quiet riverside surroundings that allow your mind to completely unplug.\n3. 🍵 Wholesome Seasonal Nourishment — Fresh, nutrient-dense cuisine designed to energize and heal.\n\nSave this guide for your retreat planning, or comment below to check upcoming dates!`;
+        craftCopy = `Quiet moments before practice 🌿🕊️\n\nSetting the space for ${topicSnippet}.\n\nTrue wellness is about intentional subtraction: leaving behind notification fatigue, quietening mental noise, and returning to the breath. From lighting subtle botanicals to preparing the open studio space, we cultivate an environment of total presence.\n\nWhat is one mindfulness habit that brings you back to center when life gets busy?`;
+        discussionCopy = `Mindful Community Check-In 👇✨\n\nWhen you think about joining ${topicSnippet}, what are you seeking most right now?\n\nIs it physical rejuvenation, mental stillness, or connecting with like-minded souls?\n\nDrop your thoughts below—we would love to welcome you into the circle!`;
+      } else if (isIncenseOrAroma) {
+        breakdownCopy = `Aromatic Notes & Blend Breakdown: ${topicSnippet}\n\nHere is what makes this blend special:\n\n1. 🌿 Pure Botanical Resins — Sourced from sustainable growers, preserving natural aromatic essences.\n2. 💎 Honest Studio Craft — Hand-rolled and cured slowly in small batches with zero harsh chemical solvents.\n3. ⏳ Grounding Ambience — Clean, lingering notes that purify your space and anchor daily rituals.\n\nSave this for your self-care checklist, or comment below to reserve a batch!`;
+        craftCopy = `Behind the scenes in the blending room 🌿🕯️\n\nCrafting ${topicSnippet}.\n\nTrue botanical aromatics cannot be hurried. From slowly curing natural botanicals to infusing oils in small batches, every step requires patience and care.\n\nThank you for choosing mindful, non-toxic living. What aroma brings you immediate calm?`;
+        discussionCopy = `Aromatherapy Discussion 👇✨\n\nWhen enjoying ${topicSnippet}, what time of day brings you the greatest sense of calm?\n\nAre you lighting it during morning meditation, or winding down as the evening sets in?\n\nShare your ritual below!`;
+      } else {
+        breakdownCopy = `Key Highlights & Practical Breakdown: ${topicSnippet}\n\nThree reasons why this experience stands apart:\n\n1. 💎 Authentic Foundation — Thoughtfully developed around ${topicSnippet} with uncompromising attention to detail.\n2. 🌟 Tangible Everyday Value — Built to deliver a memorable, high-quality standard from the very first impression.\n3. ⏳ Thoughtful Small-Batch Delivery — Crafted with genuine care and personal attention at every stage.\n\nSave this post for your reference, or drop a comment below to explore full details!`;
+        craftCopy = `Behind the scenes: The craft behind ${topicSnippet} 💡✨\n\nTrue quality doesn't happen by accident. Behind every finished offering is a quiet commitment to getting the details right—from the initial thoughtful design to the final handcrafted execution.\n\nWe believe in creating things that stand the test of time.\n\nWhat matters most to you when seeking genuine quality? Share your take below!`;
+        discussionCopy = `Community Spotlight 👇\n\nWhen it comes to ${topicSnippet}, what is the single most important element for you?\n\nFor us, authentic quality and an unhurried, thoughtful experience will always come first.\n\nDrop your perspective in the comments below—let's discuss!`;
+      }
+
       parsedJson.angleVariants = [
         {
           angleLabel: 'Direct Hook & Story',
@@ -406,21 +442,21 @@ Format: ${format}`;
         {
           angleLabel: 'Actionable Breakdown',
           style: 'Framework / Listicle',
-          copy: `Key essentials when approaching ${topicSnippet}:\n\n1. Purpose & Clarity — Set clear expectations and authentic intent.\n2. Consistent Execution — Small, high-quality steps outperform sporadic rushes.\n3. Measurable Impact — Focus on sustainable value that endures.\n\nSave this framework for your journey!`,
+          copy: breakdownCopy,
           hashtags: effectiveHashtags,
           cta: 'Learn More'
         },
         {
           angleLabel: 'Behind-The-Scenes Craft',
           style: 'Insight / Advice',
-          copy: `Behind the scenes: The intentional process behind ${topicSnippet}.\n\nEvery meaningful outcome is built step by step—from the quiet preparation to the finished experience.\n\nTrue quality takes patience and focus, not shortcuts.`,
+          copy: craftCopy,
           hashtags: effectiveHashtags,
           cta: 'Share Your Thoughts'
         },
         {
           angleLabel: 'Community Discussion',
           style: 'Question / Discussion',
-          copy: `When it comes to ${topicSnippet}, what has been the most transformative part of your experience?\n\nDrop your perspective below—let's discuss!`,
+          copy: discussionCopy,
           hashtags: effectiveHashtags,
           cta: 'Comment Below'
         }

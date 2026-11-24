@@ -217,7 +217,7 @@ Generate the structured deliverable for this skill now.`;
         { role: 'user', content: userPrompt }
       ], {
         temperature: 0.7,
-        maxTokens: 2500,
+        maxTokens: 3000,
         responseFormatJson: true,
         tenantId: params.tenantId,
         brandId: params.brandId,

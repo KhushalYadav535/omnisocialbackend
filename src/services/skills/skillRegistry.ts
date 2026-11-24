@@ -187,11 +187,32 @@ Ensure the total targetPercentage sums exactly to 100%. Assign a modern hex colo
         caption: { type: 'string' },
         hashtags: { type: 'array', items: { type: 'string' } },
         firstComment: { type: 'string' },
-        cta: { type: 'string' }
+        cta: { type: 'string' },
+        angleVariants: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              angleLabel: { type: 'string' },
+              style: { type: 'string' },
+              copy: { type: 'string' },
+              hashtags: { type: 'array', items: { type: 'string' } },
+              cta: { type: 'string' }
+            },
+            required: ['angleLabel', 'style', 'copy', 'cta']
+          }
+        }
       },
       required: ['caption', 'hashtags']
     },
-    instructions: `You are an expert Social Media Copywriter. Craft compelling post copy strictly honoring the brand voice. Optimize typography, line breaks, and readability for the target platform.`,
+    instructions: `You are an expert Social Media Copywriter and Multi-Angle Content Strategist.
+Craft compelling post copy strictly honoring the brand voice. Optimize typography, line breaks, and readability for the target platform.
+CRITICAL: Always generate exactly 4 distinct strategic angleVariants tailored to the specific topic:
+1. Direct Hook & Story (Storytelling angle with personal/narrative hook)
+2. Actionable Breakdown (Framework/Listicle with practical bullet points tailored to the subject; NEVER use generic placeholders like 'Purpose & Clarity')
+3. Behind-The-Scenes Craft (Authentic insight/craftsmanship/process angle)
+4. Community Discussion (Conversational question/poll to drive comments)
+Each angle variant MUST contain authentic copy, specific CTA, and relevant hashtags.`,
     contextRequirements: ['BRAND_PROFILE', 'VOICE_PROFILE'],
     allowedTools: [],
     isSystem: true
