@@ -387,15 +387,55 @@ Format: ${format}`;
         }
       }
     }
-    if (Array.isArray(parsedJson.angleVariants)) {
-      parsedJson.angleVariants = parsedJson.angleVariants.map((item: any) => {
+
+    const effectiveHashtags = Array.isArray(parsedJson.hashtags) && parsedJson.hashtags.length > 0
+      ? parsedJson.hashtags
+      : ['#Marketing', '#Growth', '#Strategy', '#Innovation'];
+
+    if (!Array.isArray(parsedJson.angleVariants) || parsedJson.angleVariants.length < 4) {
+      const topicSnippet = rawIdea ? rawIdea.trim() : (parsedJson.caption ? parsedJson.caption.slice(0, 50) : 'our brand experience');
+      const baseCaption = parsedJson.caption || `Discover the difference with ${topicSnippet}.`;
+      parsedJson.angleVariants = [
+        {
+          angleLabel: 'Direct Hook & Story',
+          style: 'Storytelling',
+          copy: baseCaption,
+          hashtags: effectiveHashtags,
+          cta: parsedJson.callToAction || 'Learn More'
+        },
+        {
+          angleLabel: 'Actionable Breakdown',
+          style: 'Framework / Listicle',
+          copy: `Key essentials when approaching ${topicSnippet}:\n\n1. Purpose & Clarity — Set clear expectations and authentic intent.\n2. Consistent Execution — Small, high-quality steps outperform sporadic rushes.\n3. Measurable Impact — Focus on sustainable value that endures.\n\nSave this framework for your journey!`,
+          hashtags: effectiveHashtags,
+          cta: 'Learn More'
+        },
+        {
+          angleLabel: 'Behind-The-Scenes Craft',
+          style: 'Insight / Advice',
+          copy: `Behind the scenes: The intentional process behind ${topicSnippet}.\n\nEvery meaningful outcome is built step by step—from the quiet preparation to the finished experience.\n\nTrue quality takes patience and focus, not shortcuts.`,
+          hashtags: effectiveHashtags,
+          cta: 'Share Your Thoughts'
+        },
+        {
+          angleLabel: 'Community Discussion',
+          style: 'Question / Discussion',
+          copy: `When it comes to ${topicSnippet}, what has been the most transformative part of your experience?\n\nDrop your perspective below—let's discuss!`,
+          hashtags: effectiveHashtags,
+          cta: 'Comment Below'
+        }
+      ];
+    } else {
+      const fallbackCtas = ['Learn More', 'Learn More', 'Share Your Thoughts', 'Comment Below'];
+      parsedJson.angleVariants = parsedJson.angleVariants.map((item: any, idx: number) => {
         if (!item || typeof item !== 'object') return item;
         return {
           ...item,
           copy: typeof item.copy === 'string' ? item.copy.replace(/202[0-5]\b/g, '2026') : item.copy,
-          hashtags: Array.isArray(item.hashtags)
+          hashtags: Array.isArray(item.hashtags) && item.hashtags.length > 0
             ? item.hashtags.map((t: string) => typeof t === 'string' ? t.replace(/202[0-5]\b/g, '2026') : t)
-            : []
+            : effectiveHashtags,
+          cta: item.cta || fallbackCtas[idx] || 'Learn More'
         };
       });
     }

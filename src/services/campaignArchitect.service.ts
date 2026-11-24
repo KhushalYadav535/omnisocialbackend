@@ -1120,8 +1120,8 @@ Return ONLY a valid raw JSON object:
     let phaseLabel = 'Quick Hook & Fix';
     let phaseColor = 'amber';
     let caption = '';
-    let bRollGuide = 'Phone camera brief: 4-second video looking at your screen or holding product with a thoughtful expression. Bold text on screen.';
-    let photoGuide = 'Snap a clean, well-lit smartphone photo of your workspace or hero product angle.';
+    let bRollGuide = 'Phone camera brief: 4-second video showcasing the product in use or holding it with an authentic expression. Bold text on screen.';
+    let photoGuide = 'Snap a clean, well-lit smartphone photo of your hero product angle or in-use moment.';
 
     if (preset === 'CUSTOMER_STORY') {
       title = `Real Results with ${cleanTopic.slice(0, 30)}`;
@@ -1149,8 +1149,8 @@ Return ONLY a valid raw JSON object:
         : (isFragranceOrSoap
           ? `Behind the scenes with ${cleanTopic}: natural botanical extraction.\n\nFrom selecting authentic woods and flowers to hand-blending each small batch with care, ${brandName} is dedicated to honest, natural aromatics.\n\nNo artificial fillers, no synthetic shortcuts—just pure botanical craft.\n\nDouble tap if you appreciate natural artisan craftsmanship!`
           : `Mastering ${cleanTopic} takes patience, intention, and authentic craftsmanship.\n\nBehind the scenes at ${brandName}, every detail is shaped with care—from the initial raw design to the finished creation.\n\nIt is never about quick shortcuts; it is about creating something you truly cherish every single day.\n\nDouble tap if you appreciate simple, honest craftsmanship!`);
-      bRollGuide = 'Phone camera brief: 5-second candid clip of your hands typing, sketches on desk, or working in natural daylight.';
-      photoGuide = 'Candid desk flat-lay or workstation photo with natural window sunlight.';
+      bRollGuide = 'Phone camera brief: 5-second candid clip showing the creation process or authentic craft in natural daylight.';
+      photoGuide = 'Candid close-up photo of materials or the creation process in natural daylight.';
     } else if (preset === 'SPECIAL_PROMO') {
       title = `Special Feature: ${cleanTopic.slice(0, 30)}`;
       hook = `🚨 Introducing our latest release: ${cleanTopic.slice(0, 35)}!`;
@@ -1170,7 +1170,30 @@ Return ONLY a valid raw JSON object:
         ? `Craving authentic, wholesome home meals? ${cleanTopic}.\n\nCrafted by ${brandName} with fresh ingredients, genuine care, and comforting home-cooked flavors you can rely on every single day.\n\nWhat is your ultimate favorite home comfort dish? Drop a comment below!`
         : (isFragranceOrSoap
           ? `Seeking a grounding, natural aroma for your daily rituals? Discover ${cleanTopic}.\n\nCrafted by ${brandName} with pure natural botanicals, authentic essential oils, and unhurried artisan care you can experience every single day.\n\nWhat is your favorite grounding scent for your home? Share your thoughts below!`
-          : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat matters most to you in your daily setup? Share your thoughts below!`);
+          : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat detail stands out to you the most? Share your thoughts below!`);
+    }
+
+    if (OpenRouterService.isConfigured()) {
+      try {
+        const instantPrompt = `Write a high-converting social media caption for ${brandName} promoting: "${cleanTopic}".
+Context / Preset: ${preset}.
+Requirements:
+1. One punchy, scroll-stopping opening hook.
+2. 2-3 engaging body lines specifically tailored to "${cleanTopic}".
+3. One relevant call to action question or invitation for comments.
+Strict rule: Do NOT use workstation/desk clichés like "daily setup" unless the topic is explicitly desks or computers. Keep it authentic and directly on topic.
+Return ONLY the raw caption text, no quotes.`;
+        const instantAi = await OpenRouterService.createChatCompletion(
+          [{ role: 'user', content: instantPrompt }],
+          { temperature: 0.7, maxTokens: 300 }
+        );
+        const generatedCaption = instantAi.content?.trim();
+        if (generatedCaption && generatedCaption.length > 20) {
+          caption = generatedCaption;
+        }
+      } catch (err: any) {
+        console.warn('[InstantPost] OpenRouter caption synthesis failed, using contextual fallback:', err?.message);
+      }
     }
 
     const ar = isReel ? '9:16' : '1:1';
