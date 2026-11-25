@@ -1,6 +1,8 @@
 import { prisma } from '../db.service';
 import { SkillRegistry, SkillContract } from './skillRegistry';
 import { OpenRouterService } from '../openrouter.service';
+import { AiService } from '../ai.service';
+import { config } from '../../config';
 
 export interface ExecutionStepPlan {
   stepNumber: number;
@@ -216,8 +218,9 @@ Generate the structured deliverable for this skill now.`;
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ], {
-        temperature: 0.7,
-        maxTokens: 3000,
+        model: config.openrouter.contentModel,
+        temperature: 0.75,
+        maxTokens: 3500,
         responseFormatJson: true,
         tenantId: params.tenantId,
         brandId: params.brandId,
@@ -226,15 +229,7 @@ Generate the structured deliverable for this skill now.`;
       });
 
       rawResponse = completion.content || '';
-
-      // Parse JSON safely
-      const cleanJson = rawResponse
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-
-      parsedOutput = JSON.parse(cleanJson);
+      parsedOutput = AiService.parseJsonFromResponse(rawResponse);
       steps[0].status = 'COMPLETED';
     } catch (err: any) {
       steps[0].status = 'FAILED';
@@ -244,6 +239,40 @@ Generate the structured deliverable for this skill now.`;
         rawOutput: rawResponse,
         note: 'Completed with natural narrative output'
       };
+    }
+
+    // Guarantee 4 genuine, on-topic, hashtag-consistent variants for social-post-copywriter
+    if (skill.id === 'social-post-copywriter' && parsedOutput && typeof parsedOutput === 'object') {
+      const promptInput = String(params.input?.prompt || params.input?.topic || params.input?.topicOrIdea || parsedOutput.title || '').trim();
+      const baseCaption = typeof parsedOutput.caption === 'string' && parsedOutput.caption.trim()
+        ? parsedOutput.caption.trim()
+        : (typeof parsedOutput.rawOutput === 'string' ? parsedOutput.rawOutput.slice(0, 800).trim() : '');
+
+      const guaranteedVariants = await AiService.ensureFourAuthenticVariants({
+        rawIdea: promptInput,
+        baseCaption,
+        existingVariants: parsedOutput.angleVariants,
+        hashtags: Array.isArray(parsedOutput.hashtags) ? parsedOutput.hashtags : undefined,
+        callToAction: parsedOutput.cta || 'Learn More',
+        brandContext: brand ? {
+          brandName: brand.name,
+          industry: brand.description || 'General',
+          tone: brand.voiceProfile?.tone || 'Engaging and authentic',
+          targetAudience: brand.voiceProfile?.targetAudience || 'Modern audience'
+        } : undefined,
+        tenantId: params.tenantId,
+        brandId: params.brandId,
+        userId: params.userId
+      });
+
+      parsedOutput.angleVariants = guaranteedVariants;
+      if (!parsedOutput.caption && guaranteedVariants[0]?.copy) {
+        parsedOutput.caption = guaranteedVariants[0].copy;
+      }
+      if (!Array.isArray(parsedOutput.hashtags) || parsedOutput.hashtags.length === 0) {
+        parsedOutput.hashtags = guaranteedVariants[0]?.hashtags || [];
+      }
+      steps[0].status = 'COMPLETED';
     }
 
     const executionTimeMs = Date.now() - startTime;

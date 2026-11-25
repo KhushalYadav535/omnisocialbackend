@@ -203,16 +203,18 @@ Ensure the total targetPercentage sums exactly to 100%. Assign a modern hex colo
           }
         }
       },
-      required: ['caption', 'hashtags']
+      required: ['caption', 'hashtags', 'angleVariants']
     },
     instructions: `You are an expert Social Media Copywriter and Multi-Angle Content Strategist.
 Craft compelling post copy strictly honoring the brand voice. Optimize typography, line breaks, and readability for the target platform.
-CRITICAL: Always generate exactly 4 distinct strategic angleVariants tailored to the specific topic:
-1. Direct Hook & Story (Storytelling angle with personal/narrative hook)
-2. Actionable Breakdown (Framework/Listicle with practical bullet points tailored to the subject; NEVER use generic placeholders like 'Purpose & Clarity')
-3. Behind-The-Scenes Craft (Authentic insight/craftsmanship/process angle)
-4. Community Discussion (Conversational question/poll to drive comments)
-Each angle variant MUST contain authentic copy, specific CTA, and relevant hashtags.`,
+CRITICAL RULES:
+- Generate ALL 4 distinct strategic angleVariants strictly grounded ONLY in the user's specific brief and topic (never borrow products or templates from unrelated industries):
+  1. Direct Hook & Story (Storytelling angle with narrative hook)
+  2. Actionable Breakdown (Framework/Listicle with 3 concrete bullet takeaways directly from the subject; NEVER emit generic clichés like 'Purpose & Clarity')
+  3. Behind-The-Scenes Craft (Authentic insight into preparation, materials, heritage, or process behind THIS topic)
+  4. Community Discussion (Conversational question/poll tailored specifically to THIS topic)
+- Do NOT use markdown **double-asterisk** syntax.
+- Every single variant's "copy" MUST end cleanly after a blank line with 3–4 relevant hashtags matching its "hashtags" array.`,
     contextRequirements: ['BRAND_PROFILE', 'VOICE_PROFILE'],
     allowedTools: [],
     isSystem: true
@@ -421,6 +423,8 @@ export class SkillRegistry {
             name: skill.name,
             category: skill.category,
             description: skill.description,
+            inputSchema: JSON.stringify(skill.inputSchema),
+            outputSchema: JSON.stringify(skill.outputSchema),
             instructions: skill.instructions,
             contextRequirements: JSON.stringify(skill.contextRequirements),
             allowedTools: JSON.stringify(skill.allowedTools)

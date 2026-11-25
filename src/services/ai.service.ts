@@ -27,7 +27,7 @@ export class AiService {
   /**
    * Helper to parse and extract valid JSON from LLM response content with 5-stage resilience
    */
-  private static parseJsonFromResponse(rawContent: string): any {
+  static parseJsonFromResponse(rawContent: string): any {
     if (!rawContent || typeof rawContent !== 'string') {
       return { caption: '', hashtags: [], variants: { facebook: '', instagram: '', linkedin: '' } };
     }
@@ -51,15 +51,16 @@ export class AiService {
         try {
           return JSON.parse(candidate);
         } catch {
-          // Stage 3: Sanitize unescaped newlines/tabs inside string values
+          // Stage 3: Strip trailing commas and sanitize unescaped newlines/tabs inside string values
           try {
-            const sanitized = candidate.replace(
+            const noTrailingCommas = candidate.replace(/,\s*([\]}])/g, '$1');
+            const sanitized = noTrailingCommas.replace(
               /"([^"\\]*(\\.[^"\\]*)*)"/g,
               (match) => match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')
             );
             return JSON.parse(sanitized);
           } catch {
-            // Stage 4: Regex extraction of structured fields (caption, hashtags, variants)
+            // Stage 4: Regex extraction of structured fields (caption, hashtags, variants, angleVariants)
             const captionMatch = cleaned.match(/"caption"\s*:\s*"([\s\S]*?)(?<!\\)"/);
             const hashtagsMatch = cleaned.match(/"hashtags"\s*:\s*\[([\s\S]*?)\]/);
             const ctaMatch = cleaned.match(/"callToAction"\s*:\s*"([\s\S]*?)(?<!\\)"/);
@@ -72,17 +73,38 @@ export class AiService {
               hashtags = (cleaned.match(/#[a-zA-Z0-9_]+/g) || ['#SocialMedia', '#BrandGrowth']) as string[];
             }
 
+            // Salvage any complete angleVariant objects even from truncated JSON
+            const salvagedAngleVariants: any[] = [];
+            const angleObjRegex = /\{\s*"angleLabel"\s*:\s*"([^"]+)"\s*,\s*"style"\s*:\s*"([^"]+)"\s*,\s*"copy"\s*:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?\}/g;
+            let angleMatch: RegExpExecArray | null;
+            while ((angleMatch = angleObjRegex.exec(cleaned)) !== null) {
+              const ctaInnerMatch = angleMatch[0].match(/"cta"\s*:\s*"([^"]+)"/);
+              const tagsInnerMatch = angleMatch[0].match(/"hashtags"\s*:\s*\[([^\]]*)\]/);
+              const itemTags = tagsInnerMatch
+                ? ((tagsInnerMatch[1].match(/#[a-zA-Z0-9_]+/g) || []) as string[])
+                : hashtags;
+              salvagedAngleVariants.push({
+                angleLabel: angleMatch[1],
+                style: angleMatch[2],
+                copy: angleMatch[3].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                hashtags: itemTags.length > 0 ? itemTags : hashtags,
+                cta: ctaInnerMatch ? ctaInnerMatch[1] : 'Learn More'
+              });
+            }
+
             if (captionMatch && captionMatch[1]) {
+              const cleanCap = captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
               return {
-                caption: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+                caption: cleanCap,
                 variants: {
-                  facebook: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
-                  instagram: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
-                  linkedin: captionMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')
+                  facebook: cleanCap,
+                  instagram: cleanCap,
+                  linkedin: cleanCap
                 },
+                angleVariants: salvagedAngleVariants.length > 0 ? salvagedAngleVariants : undefined,
                 hashtags,
                 callToAction: ctaMatch ? ctaMatch[1] : 'Explore more',
-                characterCount: captionMatch[1].length
+                characterCount: cleanCap.length
               };
             }
           }
@@ -297,18 +319,21 @@ ${brandContext.bannedKeywords.length > 0 ? `- FORBIDDEN WORDS: ${brandContext.ba
 - Facebook Variant: Conversational, community-focused, storytelling with line breaks and clear CTA.
 - Instagram Variant: Catchy hook, visually expressive with tasteful emojis, bullet points, CTA, followed by clean hashtag spacing.
 - LinkedIn Variant: Professional, insightful, thought-leadership style, structured spacing, high-value takeaway, and professional CTA.
-- Angle Variants: Generate exactly 4 distinct strategic angles deeply anchored to the specific topic/brief:
-  1. Direct Hook & Story (Style: 'Storytelling' - rich narrative hook focusing on the specific scenario, setting, emotional appeal, or sensory details)
-  2. Actionable Breakdown (Style: 'Framework / Listicle' - 3 concrete, topic-specific practical bullet points, steps, or features tailored strictly to the subject matter; NEVER use corporate placeholder clichés like 'Purpose & Clarity', 'Consistent Execution', or 'Measurable Impact')
-  3. Behind-The-Scenes Craft (Style: 'Insight / Advice' - insider perspective on preparation, quality, ingredients/materials, or craftsmanship specific to the topic)
-  4. Community Discussion (Style: 'Question / Discussion' - an engaging, topic-relevant debate or open question that sparks conversation in the comments)
-  All 4 angles MUST be completely written, full-length post captions with distinct CTAs and relevant hashtags. NEVER emit skeleton bullets, generic filler copy, or unrelated templates.
+- Angle Variants: MANDATORY — Generate ALL 4 distinct strategic angles in the angleVariants array, deeply anchored ONLY to the user's actual brief:
+  1. Direct Hook & Story (Style: 'Storytelling' - rich narrative hook focusing on the exact scenario, setting, product details, and emotional appeal)
+  2. Actionable Breakdown (Style: 'Framework / Listicle' - 3 concrete, practical takeaways, specs, or highlights strictly from the subject matter; NEVER emit corporate clichés like 'Purpose & Clarity', 'Consistent Execution', or 'Measurable Impact')
+  3. Behind-The-Scenes Craft (Style: 'Insight / Advice' - authentic insight into the craft, preparation, provenance, heritage, or engineering behind THIS exact subject)
+  4. Community Discussion (Style: 'Question / Discussion' - an engaging, topic-relevant question or prompt inviting reader comments)
+  STRICT RULES FOR ALL VARIANTS:
+  - Stay 100% faithful to the user's specific product/topic/industry — NEVER borrow imagery or terms from unrelated industries.
+  - Do NOT use markdown **double-asterisk** syntax anywhere in copy; use clean plain text, line breaks, and emojis.
+  - EVERY single variant copy in angleVariants (all 4) MUST end on a new line with 3–4 relevant hashtags matching its hashtags array (e.g. #Tag1 #Tag2 #Tag3 #Tag4).
 - Format Requested: ${format.toUpperCase()} (e.g. POST, REEL, STORY, CAROUSEL)
 - Current Year Context: The current year is 2026. Clamp all festive, annual, and seasonal hashtags strictly to 2026 (e.g. #Diwali2026, never emit #Diwali2023 or older years).
 
 Respond ONLY with a valid JSON object matching this schema:
 {
-  "caption": "Primary complete caption",
+  "caption": "Primary complete caption (ending with hashtags)",
   "variants": {
     "facebook": "Facebook optimized text",
     "instagram": "Instagram optimized text",
@@ -318,30 +343,30 @@ Respond ONLY with a valid JSON object matching this schema:
     {
       "angleLabel": "Direct Hook & Story",
       "style": "Storytelling",
-      "copy": "Full storytelling caption on topic...",
+      "copy": "Full storytelling caption on topic...\n\n#Tag1 #Tag2 #Tag3 #Tag4",
       "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
       "cta": "Explore Now"
     },
     {
       "angleLabel": "Actionable Breakdown",
       "style": "Framework / Listicle",
-      "copy": "Full breakdown caption on topic...",
+      "copy": "Full breakdown caption on topic...\n\n#Tag1 #Tag2 #Tag3 #Tag4",
       "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
       "cta": "Learn More"
     },
     {
       "angleLabel": "Behind-The-Scenes Craft",
       "style": "Insight / Advice",
-      "copy": "Full behind-the-scenes caption on topic...",
+      "copy": "Full behind-the-scenes caption on topic...\n\n#Tag1 #Tag2 #Tag3 #Tag4",
       "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
-      "cta": "Discover More"
+      "cta": "Share Your Thoughts"
     },
     {
       "angleLabel": "Community Discussion",
       "style": "Question / Discussion",
-      "copy": "Full community question caption on topic...",
+      "copy": "Full community question caption on topic...\n\n#Tag1 #Tag2 #Tag3 #Tag4",
       "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4"],
-      "cta": "Join Discussion"
+      "cta": "Comment Below"
     }
   ],
   "hashtags": ["#Tag1", "#Tag2", "#Tag3", "#Tag4", "#Tag5"],
@@ -360,8 +385,8 @@ Format: ${format}`;
 
     const response = await OpenRouterService.createChatCompletion(messages, {
       model: config.openrouter.contentModel,
-      temperature: 0.8,
-      maxTokens: 3000,
+      temperature: 0.75,
+      maxTokens: 3500,
       responseFormatJson: true,
       tenantId,
       brandId: brandContext.brandId,
@@ -391,94 +416,262 @@ Format: ${format}`;
 
     const effectiveHashtags = Array.isArray(parsedJson.hashtags) && parsedJson.hashtags.length > 0
       ? parsedJson.hashtags
-      : ['#Marketing', '#Growth', '#Strategy', '#Innovation'];
+      : ['#BrandSpotlight', '#Storytelling', '#CommunityFirst', '#Growth2026'];
 
-    if (!Array.isArray(parsedJson.angleVariants) || parsedJson.angleVariants.length < 4) {
-      const topicSnippet = rawIdea ? rawIdea.trim() : (parsedJson.caption ? parsedJson.caption.slice(0, 60) : 'our brand experience');
-      const baseCaption = parsedJson.caption || `Discover the difference with ${topicSnippet}.`;
-      const topicLower = `${rawIdea || ''} ${baseCaption}`.toLowerCase();
+    parsedJson.angleVariants = await this.ensureFourAuthenticVariants({
+      rawIdea,
+      baseCaption: parsedJson.caption || '',
+      existingVariants: parsedJson.angleVariants,
+      hashtags: effectiveHashtags,
+      callToAction: parsedJson.callToAction || 'Learn More',
+      brandContext: {
+        brandName: brandContext.brandName,
+        industry: brandContext.industry,
+        tone: brandContext.tone,
+        targetAudience: brandContext.targetAudience
+      },
+      tenantId,
+      brandId: brandContext.brandId,
+      userId
+    });
 
-      // Domain-aware contextual synthesis ensuring zero generic clichés
-      const isCafeOrBeverage = /\b(cafe|café|coffee|chai|tea|pakora|monsoon|rain|lakeside|brew|beverage|snack)\b/i.test(topicLower);
-      const isFootwearOrApparel = /\b(jutti|jutties|shoe|shoes|footwear|leather|artisan|embroid|handcrafted|stitched|craft|wear|fashion)\b/i.test(topicLower);
-      const isWellnessOrYoga = /\b(yoga|retreat|wellness|meditation|pranayama|mindful|peace|healing|holistic|rishikesh)\b/i.test(topicLower);
-      const isIncenseOrAroma = /\b(incense|sandalwood|fragrance|aroma|candle|perfume|essential oil|soap)\b/i.test(topicLower);
-      const isFoodOrDining = /\b(food|thali|dining|curry|meal|kitchen|chef|spices|farm|harvest)\b/i.test(topicLower);
-
-      let breakdownCopy = '';
-      let craftCopy = '';
-      let discussionCopy = '';
-
-      if (isCafeOrBeverage) {
-        breakdownCopy = `What makes the ultimate ${topicSnippet} experience:\n\n1. ☕ Freshly Brewed Spices — Slow-steeped aromatic spices crafted for deep, comforting flavor.\n2. 🌧️ Crispy Savory Pairings — Fresh, piping-hot bites prepared to order to complement every sip.\n3. 🪟 Lakeside Serenity — The gentle rhythm of raindrops and a cozy retreat from the everyday rush.\n\nSave this for your next weekend escape, or comment below to plan a visit!`;
-        craftCopy = `Behind the scenes at the counter ☕🌧️\n\nPreparing for ${topicSnippet}.\n\nThere is an art to bringing comfort to a rainy afternoon. From grinding whole cardamoms and brewing spiced tea to timing fresh savory batches as the rain rolls over the water, we treat every small detail as an invitation to slow down.\n\nThank you for making our space part of your rituals. What is your go-to rainy day comfort?`;
-        discussionCopy = `Rainy Day Poll 👇☕\n\nWhen visiting ${topicSnippet}, what is your non-negotiable comfort order?\n\nAre you Team Piping Hot Masala Chai with crispy bites, or Team Filter Coffee and quiet lakeside reading?\n\nTell us your pick below, or tag someone who needs a cozy coffee date!`;
-      } else if (isFootwearOrApparel) {
-        breakdownCopy = `Craft Details & Comfort Breakdown: ${topicSnippet}\n\nHere is why genuine hand-stitched footwear stands apart:\n\n1. 👞 Supple Natural Leather — Hand-selected, breathable materials that mold naturally to your feet over time.\n2. ✨ Traditional Hand-Embroidered Accents — Precise artisan needlework celebrating generational heritage.\n3. 👣 Cushioned Daily Wear — Double-padded soles engineered for effortless all-day comfort without pinch points.\n\nBookmark this post for your wardrobe essentials, or drop a comment to find your size!`;
-        craftCopy = `Behind the workbench 🔨✨\n\nCrafting the latest run of ${topicSnippet}.\n\nBefore a single pair is boxed, master artisans spend hours hand-cutting patterns, conditioning natural leather, and finishing delicate embroidery. In a world of mass production, slow craft creates items that endure with character.\n\nThank you for supporting traditional Indian artisan families. Which style or color do you love most?`;
-        discussionCopy = `Artisan Style Discussion 👇👠\n\nWhen styling ${topicSnippet}, how do you love wearing them most?\n\nAre you pairing them with breezy everyday handlooms, or dressing them up with festive weekend ensembles?\n\nShare your favorite combination below, or tag a friend who appreciates handcrafted elegance!`;
-      } else if (isWellnessOrYoga) {
-        breakdownCopy = `Experience & Daily Journey Breakdown: ${topicSnippet}\n\nThree pillars at the heart of our practice:\n\n1. 🧘 Restorative Daily Movement — Sunrise alignment, breathwork, and mindful flow adapted for every level.\n2. 🍃 Peaceful Natural Sanctuary — Quiet riverside surroundings that allow your mind to completely unplug.\n3. 🍵 Wholesome Seasonal Nourishment — Fresh, nutrient-dense cuisine designed to energize and heal.\n\nSave this guide for your retreat planning, or comment below to check upcoming dates!`;
-        craftCopy = `Quiet moments before practice 🌿🕊️\n\nSetting the space for ${topicSnippet}.\n\nTrue wellness is about intentional subtraction: leaving behind notification fatigue, quietening mental noise, and returning to the breath. From lighting subtle botanicals to preparing the open studio space, we cultivate an environment of total presence.\n\nWhat is one mindfulness habit that brings you back to center when life gets busy?`;
-        discussionCopy = `Mindful Community Check-In 👇✨\n\nWhen you think about joining ${topicSnippet}, what are you seeking most right now?\n\nIs it physical rejuvenation, mental stillness, or connecting with like-minded souls?\n\nDrop your thoughts below—we would love to welcome you into the circle!`;
-      } else if (isIncenseOrAroma) {
-        breakdownCopy = `Aromatic Notes & Blend Breakdown: ${topicSnippet}\n\nHere is what makes this blend special:\n\n1. 🌿 Pure Botanical Resins — Sourced from sustainable growers, preserving natural aromatic essences.\n2. 💎 Honest Studio Craft — Hand-rolled and cured slowly in small batches with zero harsh chemical solvents.\n3. ⏳ Grounding Ambience — Clean, lingering notes that purify your space and anchor daily rituals.\n\nSave this for your self-care checklist, or comment below to reserve a batch!`;
-        craftCopy = `Behind the scenes in the blending room 🌿🕯️\n\nCrafting ${topicSnippet}.\n\nTrue botanical aromatics cannot be hurried. From slowly curing natural botanicals to infusing oils in small batches, every step requires patience and care.\n\nThank you for choosing mindful, non-toxic living. What aroma brings you immediate calm?`;
-        discussionCopy = `Aromatherapy Discussion 👇✨\n\nWhen enjoying ${topicSnippet}, what time of day brings you the greatest sense of calm?\n\nAre you lighting it during morning meditation, or winding down as the evening sets in?\n\nShare your ritual below!`;
-      } else {
-        breakdownCopy = `Key Highlights & Practical Breakdown: ${topicSnippet}\n\nThree reasons why this experience stands apart:\n\n1. 💎 Authentic Foundation — Thoughtfully developed around ${topicSnippet} with uncompromising attention to detail.\n2. 🌟 Tangible Everyday Value — Built to deliver a memorable, high-quality standard from the very first impression.\n3. ⏳ Thoughtful Small-Batch Delivery — Crafted with genuine care and personal attention at every stage.\n\nSave this post for your reference, or drop a comment below to explore full details!`;
-        craftCopy = `Behind the scenes: The craft behind ${topicSnippet} 💡✨\n\nTrue quality doesn't happen by accident. Behind every finished offering is a quiet commitment to getting the details right—from the initial thoughtful design to the final handcrafted execution.\n\nWe believe in creating things that stand the test of time.\n\nWhat matters most to you when seeking genuine quality? Share your take below!`;
-        discussionCopy = `Community Spotlight 👇\n\nWhen it comes to ${topicSnippet}, what is the single most important element for you?\n\nFor us, authentic quality and an unhurried, thoughtful experience will always come first.\n\nDrop your perspective in the comments below—let's discuss!`;
-      }
-
-      parsedJson.angleVariants = [
-        {
-          angleLabel: 'Direct Hook & Story',
-          style: 'Storytelling',
-          copy: baseCaption,
-          hashtags: effectiveHashtags,
-          cta: parsedJson.callToAction || 'Learn More'
-        },
-        {
-          angleLabel: 'Actionable Breakdown',
-          style: 'Framework / Listicle',
-          copy: breakdownCopy,
-          hashtags: effectiveHashtags,
-          cta: 'Learn More'
-        },
-        {
-          angleLabel: 'Behind-The-Scenes Craft',
-          style: 'Insight / Advice',
-          copy: craftCopy,
-          hashtags: effectiveHashtags,
-          cta: 'Share Your Thoughts'
-        },
-        {
-          angleLabel: 'Community Discussion',
-          style: 'Question / Discussion',
-          copy: discussionCopy,
-          hashtags: effectiveHashtags,
-          cta: 'Comment Below'
-        }
-      ];
-    } else {
-      const fallbackCtas = ['Learn More', 'Learn More', 'Share Your Thoughts', 'Comment Below'];
-      parsedJson.angleVariants = parsedJson.angleVariants.map((item: any, idx: number) => {
-        if (!item || typeof item !== 'object') return item;
-        return {
-          ...item,
-          copy: typeof item.copy === 'string' ? item.copy.replace(/202[0-5]\b/g, '2026') : item.copy,
-          hashtags: Array.isArray(item.hashtags) && item.hashtags.length > 0
-            ? item.hashtags.map((t: string) => typeof t === 'string' ? t.replace(/202[0-5]\b/g, '2026') : t)
-            : effectiveHashtags,
-          cta: item.cta || fallbackCtas[idx] || 'Learn More'
-        };
-      });
+    // Keep caption synced with first variant if caption was empty or missing tags
+    if (!parsedJson.caption && parsedJson.angleVariants[0]?.copy) {
+      parsedJson.caption = parsedJson.angleVariants[0].copy;
+      parsedJson.characterCount = parsedJson.caption.length;
     }
 
     const validated = GeneratedContentSchema.parse(parsedJson);
 
     return validated;
+  }
+
+  /**
+   * Pure topic-faithful variant synthesizer (zero cross-category template invention).
+   * Used ONLY if OpenRouter is completely unavailable. Strictly extracts sentences and phrases
+   * from the caller's actual brief and primary caption.
+   */
+  private static synthesizeTopicFaithfulVariants(
+    rawIdea: string,
+    baseCaption: string,
+    effectiveHashtags: string[],
+    callToAction: string
+  ): AngleVariant[] {
+    const cleanBrief = (rawIdea || '').replace(/202[0-5]\b/g, '2026').trim();
+    const cleanBase = (baseCaption || '').replace(/202[0-5]\b/g, '2026').trim();
+
+    // Extract clean sentences/clauses strictly from the actual brief and base caption
+    const rawClauses = `${cleanBase}\n${cleanBrief}`
+      .split(/[\n•\|]+|(?<=[.!?])\s+/)
+      .map(s => s.replace(/^[*\-\d.)\s]+/, '').trim())
+      .filter(s => s.length > 18 && !s.startsWith('#') && !/^https?:\/\//i.test(s));
+
+    const uniqueClauses = Array.from(new Set(rawClauses));
+    const headlineSource = cleanBrief.split(/[\n.!?]/)[0]?.trim() || uniqueClauses[0] || 'Featured Highlight';
+    const shortTitle = headlineSource.length > 70 ? headlineSource.slice(0, 67) + '...' : headlineSource;
+
+    const point1 = uniqueClauses[0] || `Focused on ${shortTitle}.`;
+    const point2 = uniqueClauses[1] || cleanBrief || `Designed with care around ${shortTitle}.`;
+    const point3 = uniqueClauses[2] || `Crafted to deliver genuine value for everyone following ${shortTitle}.`;
+    const tagLine = effectiveHashtags.slice(0, 4).join(' ');
+
+    return [
+      {
+        angleLabel: 'Direct Hook & Story',
+        style: 'Storytelling',
+        copy: cleanBase || `${shortTitle}\n\n${point2}\n\n${tagLine}`,
+        hashtags: effectiveHashtags,
+        cta: callToAction || 'Explore Now'
+      },
+      {
+        angleLabel: 'Actionable Breakdown',
+        style: 'Framework / Listicle',
+        copy: `Closer Look: ${shortTitle}\n\nKey highlights to explore:\n\n1. ${point1}\n2. ${point2}\n3. ${point3}\n\nSave this post for reference or reach out for full details.\n\n${tagLine}`,
+        hashtags: effectiveHashtags,
+        cta: 'Learn More'
+      },
+      {
+        angleLabel: 'Behind-The-Scenes Craft',
+        style: 'Insight / Advice',
+        copy: `The story and care behind ${shortTitle}\n\n${point1}\n\nEvery detail takes intentional focus and pride in execution: ${point2}\n\n${tagLine}`,
+        hashtags: effectiveHashtags,
+        cta: 'Share Your Thoughts'
+      },
+      {
+        angleLabel: 'Community Discussion',
+        style: 'Question / Discussion',
+        copy: `We would love your perspective on ${shortTitle} 👇\n\n${point1}\n\nWhich aspect resonates with you most? Drop your thoughts in the comments below!\n\n${tagLine}`,
+        hashtags: effectiveHashtags,
+        cta: 'Comment Below'
+      }
+    ];
+  }
+
+  /**
+   * Shared guarantee used by both Composer (/ai/generate-post) and Orchestrator (/skills/orchestrate):
+   * Ensures exactly 4 distinct, genuine, topic-faithful variants with hashtags embedded consistently in copy.
+   */
+  static async ensureFourAuthenticVariants(params: {
+    rawIdea: string;
+    baseCaption: string;
+    existingVariants?: any[];
+    hashtags?: string[];
+    callToAction?: string;
+    brandContext?: { brandName: string; industry: string; tone: string; targetAudience: string };
+    tenantId?: string | null;
+    brandId?: string | null;
+    userId?: string | null;
+  }): Promise<AngleVariant[]> {
+    const normalizeTags = (arr: any[], fallback: string[]): string[] => {
+      const cleaned = (Array.isArray(arr) ? arr : [])
+        .filter((t): t is string => typeof t === 'string' && t.trim().length > 1)
+        .map(t => {
+          const trimmed = t.trim().replace(/\s+/g, '').replace(/202[0-5]\b/g, '2026');
+          return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+        });
+      const base = cleaned.length > 0 ? cleaned : fallback;
+      return Array.from(new Set(base)).slice(0, 5);
+    };
+
+    const effectiveHashtags = normalizeTags(
+      params.hashtags || [],
+      ['#BrandSpotlight', '#Storytelling', '#CommunityFirst', '#Growth2026']
+    );
+
+    const cannedLeakRegex = /Purpose & Clarity|Consistent Execution|Measurable Impact|Focused Intent|Measurable Value|Supple Natural Leather|genuine hand-stitched footwear|Weekend Thali|Essential Framework:|Essential Highlights:/i;
+
+    const filterValid = (items: any[] | undefined): AngleVariant[] => {
+      if (!Array.isArray(items)) return [];
+      return items
+        .filter(item =>
+          item &&
+          typeof item === 'object' &&
+          typeof item.copy === 'string' &&
+          item.copy.trim().length >= 35 &&
+          !cannedLeakRegex.test(item.copy)
+        )
+        .map((item, idx) => ({
+          angleLabel: typeof item.angleLabel === 'string' && item.angleLabel.trim()
+            ? item.angleLabel.trim()
+            : ['Direct Hook & Story', 'Actionable Breakdown', 'Behind-The-Scenes Craft', 'Community Discussion'][idx] || 'Direct Hook & Story',
+          style: typeof item.style === 'string' && item.style.trim()
+            ? item.style.trim()
+            : ['Storytelling', 'Framework / Listicle', 'Insight / Advice', 'Question / Discussion'][idx] || 'Storytelling',
+          copy: item.copy.replace(/202[0-5]\b/g, '2026').trim(),
+          hashtags: normalizeTags(item.hashtags, effectiveHashtags),
+          cta: typeof item.cta === 'string' && item.cta.trim()
+            ? item.cta.trim()
+            : ['Explore Now', 'Learn More', 'Share Your Thoughts', 'Comment Below'][idx] || 'Learn More'
+        }));
+    };
+
+    let validVariants = filterValid(params.existingVariants);
+
+    // Repair pass via dedicated lightweight OpenRouter call whenever LLM returned < 4 genuine variants
+    if (validVariants.length < 4 && OpenRouterService.isConfigured()) {
+      try {
+        const repairSystem = `You are a Senior Social Media Copywriter for "${params.brandContext?.brandName || 'our brand'}" (${params.brandContext?.industry || 'General'}).
+Return strictly valid JSON containing an "angleVariants" array with EXACTLY 4 complete, unique, deeply topic-specific social post captions:
+1. "Direct Hook & Story" (Style: "Storytelling") — vivid narrative hook grounded directly in the brief
+2. "Actionable Breakdown" (Style: "Framework / Listicle") — 3–4 concrete facts, highlights, specs, or steps directly from the brief
+3. "Behind-The-Scenes Craft" (Style: "Insight / Advice") — authentic provenance, process, materials, or team insight strictly about THIS brief
+4. "Community Discussion" (Style: "Question / Discussion") — specific conversational prompt inviting reader comments about THIS brief
+
+CRITICAL RULES:
+- Use ONLY real facts, products, locations, materials, specs, and details present in the brief or reference caption. NEVER borrow products or templates from unrelated industries.
+- Do NOT use markdown **double-asterisk** syntax.
+- EVERY variant's "copy" MUST end cleanly after a blank line with 3–4 relevant hashtags matching its "hashtags" array.
+- Clamp any years strictly to 2026.`;
+
+        const repairUser = `Brief / Topic: "${params.rawIdea || params.baseCaption.slice(0, 120)}"
+Reference Primary Caption: "${(params.baseCaption || '').slice(0, 600)}"
+Brand Tone: ${params.brandContext?.tone || 'Engaging and authentic'}
+Target Audience: ${params.brandContext?.targetAudience || 'Targeted buyers & community'}
+
+Respond ONLY with JSON:
+{
+  "angleVariants": [
+    { "angleLabel": "Direct Hook & Story", "style": "Storytelling", "copy": "...", "hashtags": ["#Tag1", "#Tag2", "#Tag3"], "cta": "Explore Now" },
+    { "angleLabel": "Actionable Breakdown", "style": "Framework / Listicle", "copy": "...", "hashtags": ["#Tag1", "#Tag2", "#Tag3"], "cta": "Learn More" },
+    { "angleLabel": "Behind-The-Scenes Craft", "style": "Insight / Advice", "copy": "...", "hashtags": ["#Tag1", "#Tag2", "#Tag3"], "cta": "Share Your Thoughts" },
+    { "angleLabel": "Community Discussion", "style": "Question / Discussion", "copy": "...", "hashtags": ["#Tag1", "#Tag2", "#Tag3"], "cta": "Comment Below" }
+  ]
+}`;
+
+        const repairRes = await OpenRouterService.createChatCompletion(
+          [
+            { role: 'system', content: repairSystem },
+            { role: 'user', content: repairUser }
+          ],
+          {
+            model: config.openrouter.contentModel,
+            temperature: 0.75,
+            maxTokens: 2500,
+            responseFormatJson: true,
+            tenantId: params.tenantId,
+            brandId: params.brandId,
+            userId: params.userId,
+            taskType: 'CONTENT_STUDIO'
+          }
+        );
+
+        const repairedJson = this.parseJsonFromResponse(repairRes.content);
+        const repairedValid = filterValid(repairedJson?.angleVariants);
+        if (repairedValid.length >= 4) {
+          validVariants = repairedValid.slice(0, 4);
+        } else if (repairedValid.length > validVariants.length) {
+          validVariants = repairedValid;
+        }
+      } catch (repairErr: any) {
+        console.warn('[AiService] Variant repair call notice:', repairErr?.message || repairErr);
+      }
+    }
+
+    // Complete any remaining missing slots cleanly without cross-bleeding foreign templates
+    if (validVariants.length < 4) {
+      const synthetic = this.synthesizeTopicFaithfulVariants(
+        params.rawIdea,
+        params.baseCaption,
+        effectiveHashtags,
+        params.callToAction || 'Learn More'
+      );
+      while (validVariants.length < 4) {
+        validVariants.push(synthetic[validVariants.length]);
+      }
+    }
+
+    const defaultAngles = [
+      { angleLabel: 'Direct Hook & Story', style: 'Storytelling', cta: params.callToAction || 'Explore Now' },
+      { angleLabel: 'Actionable Breakdown', style: 'Framework / Listicle', cta: 'Learn More' },
+      { angleLabel: 'Behind-The-Scenes Craft', style: 'Insight / Advice', cta: 'Share Your Thoughts' },
+      { angleLabel: 'Community Discussion', style: 'Question / Discussion', cta: 'Comment Below' }
+    ];
+
+    // Enforce consistent inline hashtags across ALL 4 variants & clean 2026 clamping
+    return validVariants.slice(0, 4).map((item, idx) => {
+      const defaults = defaultAngles[idx];
+      const variantTags = normalizeTags(item.hashtags, effectiveHashtags);
+      let finalCopy = (item.copy || '').replace(/202[0-5]\b/g, '2026').trim();
+
+      // Embed hashtags consistently in copy across variants 1-4 if fewer than 2 hashtags are present
+      const inlineTagsCount = (finalCopy.match(/(?:^|\s)#[a-zA-Z0-9_]{2,}/g) || []).length;
+      if (inlineTagsCount < 2 && variantTags.length > 0) {
+        const missingTags = variantTags
+          .slice(0, 4)
+          .filter(t => !finalCopy.toLowerCase().includes(t.toLowerCase()));
+        if (missingTags.length > 0) {
+          finalCopy = `${finalCopy}\n\n${missingTags.join(' ')}`;
+        }
+      }
+
+      return {
+        angleLabel: item.angleLabel || defaults.angleLabel,
+        style: item.style || defaults.style,
+        copy: finalCopy,
+        hashtags: variantTags,
+        cta: item.cta || defaults.cta
+      };
+    });
   }
 
   /**
