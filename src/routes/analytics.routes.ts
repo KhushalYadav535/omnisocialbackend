@@ -43,6 +43,9 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
           totalPublishedPosts: 0,
           totalQueuedPosts: 0,
           totalFailedPosts: 0,
+          totalMissedPosts: 0,
+          totalUnfulfilledDrops: 0,
+          publishingSla: 100,
           totalInteractions: 0,
           unreadCount: 0,
           needsResponseCount: 0,
@@ -133,10 +136,7 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
         where: {
           ...pubWhere,
           status: 'QUEUED',
-          OR: [
-            { scheduledFor: null },
-            { scheduledFor: { gte: now } }
-          ]
+          scheduledFor: { gte: now }
         }
       }),
       // 3. Failed posts in window (deduplicated by distinct contentId to match calendar)

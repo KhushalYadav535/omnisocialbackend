@@ -15,6 +15,7 @@ import { TimingService } from '../services/timing.service';
 import { RepurposeService } from '../services/repurpose.service';
 import { ViralityService } from '../services/virality.service';
 import { CampaignArchitectService } from '../services/campaignArchitect.service';
+import { AuditService } from '../services/audit.service';
 
 const router = Router();
 
@@ -650,6 +651,20 @@ router.post('/deploy-campaign', async (req: AuthRequest, res: Response): Promise
       posts,
       approvalMode: resolvedApprovalMode
     });
+
+    if (resolvedApprovalMode === 'APPROVED') {
+      await AuditService.record({
+        tenantId: req.user?.tenantId,
+        userId: req.user?.id,
+        action: 'GOVERNANCE_GATE_BYPASSED',
+        entityType: 'Campaign',
+        entityId: targetBrandId,
+        details: {
+          campaignName: campaignName || 'Start From Zero Campaign',
+          scheduledCount: result.scheduledCount
+        }
+      });
+    }
 
     res.json({
       success: true,
