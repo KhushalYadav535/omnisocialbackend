@@ -423,9 +423,34 @@ export class MetaService {
       }
 
       let postId: string = '';
+      const isVideoMedia = Boolean(mediaUrl && /\.(mp4|mov|webm|m4v)(\?|$)/i.test(mediaUrl));
 
       if (mediaUrl) {
-        if (isLocalBinary && binaryBuffer) {
+        if (isVideoMedia) {
+          if (isLocalBinary && binaryBuffer) {
+            const form = new FormData();
+            form.append('access_token', activeToken);
+            form.append('description', message || '');
+            const blob = new Blob([new Uint8Array(binaryBuffer)], { type: 'video/mp4' });
+            form.append('source', blob, binaryFileName.endsWith('.mp4') ? binaryFileName : 'reel.mp4');
+
+            const videoRes = await axios.post(`${config.meta.graphBaseUrl}/${targetPageId}/videos`, form, {
+              timeout: 60000
+            });
+            postId = videoRes.data?.id;
+          } else {
+            const videoRes = await axios.post(
+              `${config.meta.graphBaseUrl}/${targetPageId}/videos`,
+              {
+                access_token: activeToken,
+                file_url: mediaUrl,
+                description: message || ''
+              },
+              { timeout: 60000 }
+            );
+            postId = videoRes.data?.id;
+          }
+        } else if (isLocalBinary && binaryBuffer) {
           // Direct photo post with binary buffer and caption message
           const form = new FormData();
           form.append('access_token', activeToken);
@@ -467,10 +492,23 @@ export class MetaService {
         throw new MetaApiError('Facebook returned success response without post ID');
       }
 
+      let postUrl = `https://www.facebook.com/${postId}`;
+      try {
+        const permalinkRes = await axios.get(`${config.meta.graphBaseUrl}/${postId}`, {
+          params: { fields: 'permalink_url', access_token: activeToken },
+          timeout: 8000
+        });
+        if (permalinkRes.data?.permalink_url) {
+          postUrl = permalinkRes.data.permalink_url;
+        }
+      } catch {
+        // Fallback to standard Facebook ID URL when permalink_url query is unavailable
+      }
+
       return {
         success: true,
         postId,
-        postUrl: `https://facebook.com/${postId}`
+        postUrl
       };
     } catch (error: any) {
       if (error instanceof MetaApiError) throw error;
@@ -500,7 +538,8 @@ export class MetaService {
     igUserId: string,
     accessToken: string,
     caption: string,
-    imageUrl: string
+    imageUrl: string,
+    options?: { mediaType?: string }
   ): Promise<{ success: true; postId: string; postUrl: string }> {
     const targetIgId = (igUserId === 'ig_61596019950826' || igUserId.startsWith('ig_') || igUserId === 'manual_instagram')
       ? '17841451672167206'
@@ -511,16 +550,28 @@ export class MetaService {
       imageUrl = imageUrl.replace('http://', 'https://');
     }
 
+    const isVideoFile = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(imageUrl || '');
+    const isReelContainer = isVideoFile;
+
     try {
-      // Step 1: Create Media Container
+      // Step 1: Create Media Container (REELS for MP4/video files, standard image container otherwise)
+      const containerPayload: Record<string, any> = isReelContainer
+        ? {
+            access_token: activeToken,
+            media_type: 'REELS',
+            video_url: imageUrl,
+            caption
+          }
+        : {
+            access_token: activeToken,
+            image_url: imageUrl,
+            caption
+          };
+
       const containerRes = await axios.post(
         `${config.meta.graphBaseUrl}/${targetIgId}/media`,
-        {
-          access_token: activeToken,
-          image_url: imageUrl,
-          caption
-        },
-        { timeout: 30000 }
+        containerPayload,
+        { timeout: 45000 }
       );
 
       const creationId = containerRes.data?.id;
@@ -528,10 +579,10 @@ export class MetaService {
         throw new MetaApiError('Instagram container creation failed: No container ID returned');
       }
 
-      // Step 2: Container Readiness Check (poll up to 5 times)
-      let isReady = false;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Step 2: Container Readiness Check (poll longer for video Reels)
+      const maxAttempts = isReelContainer ? 15 : 5;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, isReelContainer ? 3000 : 2000));
         const statusRes = await axios.get(`${config.meta.graphBaseUrl}/${creationId}`, {
           params: {
             fields: 'status_code',
@@ -542,7 +593,6 @@ export class MetaService {
 
         const statusCode = statusRes.data?.status_code;
         if (statusCode === 'FINISHED' || statusCode === undefined) {
-          isReady = true;
           break;
         } else if (statusCode === 'ERROR') {
           throw new MetaApiError('Instagram container processing encountered an ERROR state');
@@ -564,25 +614,34 @@ export class MetaService {
         throw new MetaApiError('Instagram media_publish returned no media ID');
       }
 
+      // Step 4: Resolve canonical Instagram permalink (/p/<shortcode>/ or /reel/<shortcode>/)
+      let postUrl = isReelContainer || options?.mediaType === 'REEL'
+        ? `https://www.instagram.com/reel/${postId}/`
+        : `https://www.instagram.com/p/${postId}/`;
+      try {
+        const permalinkRes = await axios.get(`${config.meta.graphBaseUrl}/${postId}`, {
+          params: {
+            fields: 'permalink',
+            access_token: activeToken
+          },
+          timeout: 8000
+        });
+        if (permalinkRes.data?.permalink) {
+          postUrl = permalinkRes.data.permalink;
+        }
+      } catch {
+        // Keep media ID fallback URL if permalink lookup is temporarily unavailable
+      }
+
       return {
         success: true,
         postId,
-        postUrl: `https://instagram.com/p/${postId}`
+        postUrl
       };
     } catch (error: any) {
-      // If code 100/10/200 on dev sandbox (Object does not exist or unapproved permissions during review recording), gracefully provide published response so video screencast succeeds smoothly
-      const metaErr = error.response?.data?.error;
-      if (metaErr && (metaErr.code === 100 || metaErr.code === 10 || metaErr.code === 200 || metaErr.code === 33)) {
-        const fallbackPostId = `1784${Date.now().toString().slice(-10)}`;
-        return {
-          success: true,
-          postId: fallbackPostId,
-          postUrl: `https://www.instagram.com/p/DA_${fallbackPostId.slice(-6)}/`
-        };
-      }
-
       if (error instanceof MetaApiError) throw error;
 
+      const metaErr = error.response?.data?.error;
       if (metaErr) {
         throw new MetaApiError(
           `Instagram publishing failed: ${metaErr.message} (code: ${metaErr.code})`,

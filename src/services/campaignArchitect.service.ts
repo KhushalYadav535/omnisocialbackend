@@ -30,6 +30,8 @@ export interface CampaignPostPlan {
   ctaKeyword?: string;
   firstComment?: string;
   mediaUrl?: string;
+  mediaSource?: 'OPENROUTER_AI' | 'STOCK_FALLBACK' | 'USER_SELECTED';
+  imageModelUsed?: string;
   aspectRatio?: string;
 }
 
@@ -736,14 +738,17 @@ Return ONLY a valid raw JSON object:
     brandId: string;
     campaignName: string;
     posts: CampaignPostPlan[];
+    approvalMode?: 'PENDING' | 'APPROVED';
   }): Promise<{
     success: boolean;
     scheduledCount: number;
     campaignName: string;
+    approvalStatus: 'PENDING' | 'APPROVED';
     firstPostDate: string;
     lastPostDate: string;
   }> {
-    const { tenantId, userId, brandId, campaignName, posts } = params;
+    const { tenantId, userId, brandId, campaignName, posts, approvalMode = 'PENDING' } = params;
+    const resolvedApprovalStatus: 'PENDING' | 'APPROVED' = approvalMode === 'APPROVED' ? 'APPROVED' : 'PENDING';
 
     if (!posts || posts.length === 0) {
       throw new Error('No campaign posts provided for deployment');
@@ -801,7 +806,7 @@ Return ONLY a valid raw JSON object:
                 targetPlatforms: JSON.stringify([reqPlatform]),
                 format: p.format || 'POST',
                 status: 'SCHEDULED',
-                clientApprovalStatus: 'APPROVED',
+                clientApprovalStatus: resolvedApprovalStatus,
                 firstComment: p.firstComment || null,
                 viralityScore: 88 + Math.floor(Math.random() * 9),
                 createdByUserId: userId
@@ -819,7 +824,7 @@ Return ONLY a valid raw JSON object:
                   targetPlatforms: JSON.stringify([reqPlatform]),
                   format: p.format || 'POST',
                   status: 'SCHEDULED',
-                  clientApprovalStatus: 'APPROVED',
+                  clientApprovalStatus: resolvedApprovalStatus,
                   createdByUserId: userId
                 }
               });
@@ -878,7 +883,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'APPROVED',
+              clientApprovalStatus: resolvedApprovalStatus,
               firstComment: p.firstComment || null,
               viralityScore: 88 + Math.floor(Math.random() * 9),
               createdByUserId: userId
@@ -895,7 +900,7 @@ Return ONLY a valid raw JSON object:
               targetPlatforms: JSON.stringify([reqPlatform]),
               format: p.format || 'POST',
               status: 'SCHEDULED',
-              clientApprovalStatus: 'APPROVED',
+              clientApprovalStatus: resolvedApprovalStatus,
               createdByUserId: userId
             }
           });
@@ -930,6 +935,7 @@ Return ONLY a valid raw JSON object:
       success: true,
       scheduledCount: createdPublications.length,
       campaignName,
+      approvalStatus: resolvedApprovalStatus,
       firstPostDate: posts[0].scheduledDate,
       lastPostDate: posts[posts.length - 1].scheduledDate
     };
@@ -952,7 +958,8 @@ Return ONLY a valid raw JSON object:
     mediaUrl: string;
     mediaType: 'IMAGE' | 'REEL';
     aspectRatio: string;
-    source: 'OPENROUTER' | 'AI_ENGINE';
+    source: 'OPENROUTER_AI' | 'STOCK_FALLBACK';
+    modelUsed?: string;
   }> {
     let {
       prompt,
@@ -976,36 +983,39 @@ Return ONLY a valid raw JSON object:
       fs.mkdirSync(uploadsDir, { recursive: true });
     }
 
-    // 1. Try OpenRouter FLUX 3 Generation first
+    // 1. Try OpenRouter In-App Image Generation first (cascades paid FLUX 3 -> Seedream -> Recraft free tier)
     try {
       const res = await OpenRouterService.generateImage({
-        prompt: isReel ? `${prompt}, vertical 9:16 phone reel format, high quality` : prompt,
+        prompt: isReel ? `${prompt}, vertical 9:16 phone reel composition, high quality` : prompt,
         aspectRatio: isReel ? '9:16' : '1:1'
       });
 
       if (res.b64_json) {
-        const filename = `media_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+        const ext = res.mediaType?.includes('png') ? 'png' : res.mediaType?.includes('webp') ? 'webp' : 'jpg';
+        const filename = `media_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
         const filePath = path.join(uploadsDir, filename);
         fs.writeFileSync(filePath, Buffer.from(res.b64_json, 'base64'));
         return {
           mediaUrl: `${protocol}://${host}/uploads/${filename}`,
           mediaType,
           aspectRatio,
-          source: 'OPENROUTER'
+          source: 'OPENROUTER_AI',
+          modelUsed: res.modelUsed
         };
       } else if (res.url) {
         return {
           mediaUrl: res.url,
           mediaType,
           aspectRatio,
-          source: 'OPENROUTER'
+          source: 'OPENROUTER_AI',
+          modelUsed: res.modelUsed
         };
       }
     } catch (err: any) {
-      console.warn('[CampaignMedia] OpenRouter credits unavailable, activating resilient AI visual synthesis:', err.message);
+      console.warn('[CampaignMedia] All OpenRouter image models failed, using honest Unsplash stock fallback:', err.message);
     }
 
-    // 2. High-Fidelity Categorized Visual Synthesis Engine
+    // 2. Categorized Unsplash CC0 Stock Fallback (explicitly marked STOCK_FALLBACK)
     const descLower = (productDescription + ' ' + prompt).toLowerCase();
 
     // Curated high-res library matched to business archetypes and phases
@@ -1057,10 +1067,10 @@ Return ONLY a valid raw JSON object:
       ? `${basePhoto}?w=720&h=1280&fit=crop&q=80`
       : `${basePhoto}?w=1080&h=1080&fit=crop&q=80`;
 
-    // Download to local uploads folder to ensure permanent local serving
+    // Download to local uploads folder to ensure reliable serving
     try {
       const imgRes = await axios.get(targetUrl, { responseType: 'arraybuffer', timeout: 15000 });
-      const filename = `media_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+      const filename = `media_stock_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
       const filePath = path.join(uploadsDir, filename);
       fs.writeFileSync(filePath, Buffer.from(imgRes.data));
 
@@ -1068,14 +1078,14 @@ Return ONLY a valid raw JSON object:
         mediaUrl: `${protocol}://${host}/uploads/${filename}`,
         mediaType,
         aspectRatio,
-        source: 'AI_ENGINE'
+        source: 'STOCK_FALLBACK'
       };
     } catch {
       return {
         mediaUrl: targetUrl,
         mediaType,
         aspectRatio,
-        source: 'AI_ENGINE'
+        source: 'STOCK_FALLBACK'
       };
     }
   }
@@ -1173,29 +1183,6 @@ Return ONLY a valid raw JSON object:
           : `Looking for a better, more intentional approach to ${cleanTopic}?\n\nCrafted by ${brandName} with uncompromising dedication to quality, attention to detail, and lasting value.\n\nWhat detail stands out to you the most? Share your thoughts below!`);
     }
 
-    if (OpenRouterService.isConfigured()) {
-      try {
-        const instantPrompt = `Write a high-converting social media caption for ${brandName} promoting: "${cleanTopic}".
-Context / Preset: ${preset}.
-Requirements:
-1. One punchy, scroll-stopping opening hook.
-2. 2-3 engaging body lines specifically tailored to "${cleanTopic}".
-3. One relevant call to action question or invitation for comments.
-Strict rule: Do NOT use workstation/desk clichés like "daily setup" unless the topic is explicitly desks or computers. Keep it authentic and directly on topic.
-Return ONLY the raw caption text, no quotes.`;
-        const instantAi = await OpenRouterService.createChatCompletion(
-          [{ role: 'user', content: instantPrompt }],
-          { temperature: 0.7, maxTokens: 300 }
-        );
-        const generatedCaption = instantAi.content?.trim();
-        if (generatedCaption && generatedCaption.length > 20) {
-          caption = generatedCaption;
-        }
-      } catch (err: any) {
-        console.warn('[InstantPost] OpenRouter caption synthesis failed, using contextual fallback:', err?.message);
-      }
-    }
-
     const ar = isReel ? '9:16' : '1:1';
     const aiImagePrompt = `Cinematic commercial photography of ${cleanTopic}, aesthetic studio lighting, minimal modern environment, 8k resolution, photorealistic.`;
     const midjourneyPrompt = `Commercial product photography of ${cleanTopic}, dramatic volumetric lighting, luxury minimalist studio setting, shot on 35mm lens, 8k resolution --ar ${ar} --v 6.1 --style raw`;
@@ -1205,20 +1192,48 @@ Return ONLY the raw caption text, no quotes.`;
     const voiceoverScript = `[0:00 - 0:03 HOOK]: ${hook}\n[0:03 - 0:10 VALUE]: If you're dealing with ${cleanTopic}, you know how frustrating the old way is. Here is the modern fix.\n[0:10 - 0:15 CTA]: Drop a comment below right now and I'll send you the instant link in your DMs!`;
     const canvaDesignBrief = `Headline Overlay: "${title.slice(0, 35)}" (Bold Sans 64pt, white with dark drop shadow in safe zone). Color Palette: #4F46E5 (Indigo), #0F172A (Slate), #10B981 (Emerald). Minimalist icons.`;
 
-    let mediaUrl: string | undefined;
-    try {
-      const mediaRes = await CampaignArchitectService.generateCampaignMedia({
-        prompt: aiImagePrompt,
-        mediaType: isReel ? 'REEL' : 'IMAGE',
-        productDescription: cleanTopic,
-        phase,
-        dayNumber: 1,
-        host,
-        protocol
-      });
-      mediaUrl = mediaRes.mediaUrl;
-    } catch (e: any) {
+    const captionTask = OpenRouterService.isConfigured()
+      ? (async () => {
+          try {
+            const instantPrompt = `Write a high-converting social media caption for ${brandName} promoting: "${cleanTopic}".
+Context / Preset: ${preset}.
+Requirements:
+1. One punchy, scroll-stopping opening hook.
+2. 2-3 engaging body lines specifically tailored to "${cleanTopic}".
+3. One relevant call to action question or invitation for comments.
+Strict rule: Do NOT use workstation/desk clichés like "daily setup" unless the topic is explicitly desks or computers. Keep it authentic and directly on topic.
+Return ONLY the raw caption text, no quotes.`;
+            const instantAi = await OpenRouterService.createChatCompletion(
+              [{ role: 'user', content: instantPrompt }],
+              { temperature: 0.7, maxTokens: 300 }
+            );
+            const generatedCaption = instantAi.content?.trim();
+            if (generatedCaption && generatedCaption.length > 20) {
+              return generatedCaption;
+            }
+          } catch (err: any) {
+            console.warn('[InstantPost] OpenRouter caption synthesis failed, using contextual fallback:', err?.message);
+          }
+          return null;
+        })()
+      : Promise.resolve(null);
+
+    const mediaTask = CampaignArchitectService.generateCampaignMedia({
+      prompt: aiImagePrompt,
+      mediaType: isReel ? 'REEL' : 'IMAGE',
+      productDescription: cleanTopic,
+      phase,
+      dayNumber: 1,
+      host,
+      protocol
+    }).catch((e: any) => {
       console.warn('[InstantPost] Media generation warning:', e.message);
+      return null;
+    });
+
+    const [aiCaptionResult, mediaRes] = await Promise.all([captionTask, mediaTask]);
+    if (aiCaptionResult) {
+      caption = aiCaptionResult;
     }
 
     return {
@@ -1244,7 +1259,9 @@ Return ONLY the raw caption text, no quotes.`;
       ctaType: 'COMMENT_KEYWORD',
       ctaKeyword: 'YES',
       firstComment: `👇 Link also available in bio! Comment "YES" and our automated bot will send you the instant access link.`,
-      mediaUrl,
+      mediaUrl: mediaRes?.mediaUrl,
+      mediaSource: mediaRes?.source || 'STOCK_FALLBACK',
+      imageModelUsed: mediaRes?.modelUsed,
       aspectRatio: ar
     };
   }

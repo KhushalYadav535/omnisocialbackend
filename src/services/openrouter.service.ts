@@ -385,37 +385,37 @@ export class OpenRouterService {
         description: 'Google DeepMind flagship photorealistic video model with native synchronized audio and ultra-high realistic motion.'
       },
       {
-        id: 'google/veo-3.1',
-        name: 'Google: Veo 3.1 Cinematic 4K',
+        id: 'google/veo-3.1-lite',
+        name: 'Google: Veo 3.1 Lite (Fast Preview)',
         provider: 'Google DeepMind',
         isDefault: false,
         supportsAudio: true,
-        resolutions: ['720p', '1080p', '4K'],
+        resolutions: ['720p', '1080p'],
         aspectRatios: ['9:16', '16:9'],
         durations: [4, 6, 8],
-        description: 'Maximum fidelity photorealistic 4K cinematic video generation with audio.'
+        description: 'Lightweight Veo 3.1 variant optimized for rapid social Reel turnarounds.'
       },
       {
-        id: 'bytedance/seedance-2.0',
-        name: 'ByteDance: Seedance 2.0 (TikTok/Reels AI)',
+        id: 'bytedance/seedance-2.5-flash',
+        name: 'ByteDance: Seedance 2.5 Flash (Reels AI)',
         provider: 'ByteDance',
         isDefault: false,
         supportsAudio: true,
         resolutions: ['480p', '720p', '1080p'],
         aspectRatios: ['9:16', '16:9', '1:1'],
         durations: [4, 6, 8, 10],
-        description: 'Engineered by TikTok creators specifically for viral vertical reels with audio.'
+        description: 'Latest ByteDance vertical video generator tuned for crisp short-form reels.'
       },
       {
-        id: 'kwaivgi/kling-v3.0-pro',
-        name: 'Kling: Video v3.0 Pro',
-        provider: 'Kuaishou',
+        id: 'minimax/hailuo-3',
+        name: 'MiniMax: Hailuo 3 Cinematic',
+        provider: 'MiniMax',
         isDefault: false,
         supportsAudio: true,
-        resolutions: ['720p'],
+        resolutions: ['720p', '1080p'],
         aspectRatios: ['9:16', '16:9', '1:1'],
-        durations: [4, 6, 8, 10],
-        description: 'Celebrated for cinematic realism and accurate physical dynamics.'
+        durations: [5, 6],
+        description: 'Expressive subject motion and smooth camera choreography for commercial reels.'
       },
       {
         id: 'alibaba/wan-3.0-prime',
@@ -441,7 +441,7 @@ export class OpenRouterService {
         name: 'Black Forest Labs: FLUX 3 (Recommended)',
         provider: 'Black Forest Labs',
         isDefault: true,
-        description: 'Industry benchmark for photorealistic images, perfect lighting, and natural human details.'
+        description: 'Industry benchmark for photorealistic images, studio lighting, and product detail.'
       },
       {
         id: 'bytedance-seed/seedream-5-0-flash',
@@ -449,6 +449,13 @@ export class OpenRouterService {
         provider: 'ByteDance',
         isDefault: false,
         description: 'Fast, high-fidelity visual generation optimized for social media feeds.'
+      },
+      {
+        id: 'recraft/recraft-v4.1-flash-v2:free',
+        name: 'Recraft v4.1 Flash (Free In-App AI)',
+        provider: 'Recraft',
+        isDefault: false,
+        description: 'Zero-cost crisp marketing visual generator available directly inside OmniSocial.'
       },
       {
         id: 'google/gemini-nano-banana-2.1',
@@ -476,7 +483,8 @@ export class OpenRouterService {
       throw new OpenRouterConfigurationError('OpenRouter API key is not configured.');
     }
 
-    const model = options.model || 'google/veo-3.1-fast';
+    const requestedModel = options.model || 'google/veo-3.1-fast';
+    const model = requestedModel === 'kwaivgi/kling-v3.0-pro' ? 'bytedance/seedance-2.5-flash' : requestedModel;
     const aspectRatio = options.aspectRatio || '9:16';
     const duration = options.duration || 4;
     const resolution = options.resolution || '720p';
@@ -497,13 +505,14 @@ export class OpenRouterService {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 45000
       }
     );
 
+    const jobId = res.data.id || res.data.generation_id;
     return {
-      id: res.data.id || res.data.generation_id,
-      pollingUrl: res.data.polling_url || `https://openrouter.ai/api/v1/videos/${res.data.id}`,
+      id: jobId,
+      pollingUrl: res.data.polling_url || `https://openrouter.ai/api/v1/videos/${jobId}`,
       status: res.data.status || 'pending'
     };
   }
@@ -526,75 +535,113 @@ export class OpenRouterService {
       headers: {
         Authorization: `Bearer ${apiKey}`
       },
-      timeout: 15000
+      timeout: 20000
     });
+
+    const rawStatus = String(res.data?.status || 'pending').toLowerCase();
+    const normalizedStatus: 'pending' | 'completed' | 'failed' =
+      rawStatus === 'completed'
+        ? 'completed'
+        : ['failed', 'cancelled', 'expired', 'error'].includes(rawStatus)
+          ? 'failed'
+          : 'pending';
+
+    const signedUrls = Array.isArray(res.data?.urls) ? res.data.urls : [];
+    const unsignedUrls = Array.isArray(res.data?.unsigned_urls) ? res.data.unsigned_urls : [];
+    const resolvedUrls = signedUrls.length > 0 ? signedUrls : unsignedUrls;
 
     return {
       id: res.data.id || jobId,
-      status: res.data.status,
-      unsignedUrls: res.data.unsigned_urls || [],
+      status: normalizedStatus,
+      unsignedUrls: resolvedUrls,
       error: res.data.error?.message || res.data.error
     };
   }
 
   /**
-   * Download Generated Video Stream from OpenRouter
+   * Download Generated Video Stream from OpenRouter (or signed storage URL)
    */
   static async downloadVideoBuffer(contentUrl: string): Promise<Buffer> {
     const apiKey = config.openrouter.apiKey;
+    const isOpenRouterProxy = contentUrl.includes('openrouter.ai');
     const res = await axios.get(contentUrl, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      },
+      headers: isOpenRouterProxy ? { Authorization: `Bearer ${apiKey}` } : undefined,
       responseType: 'arraybuffer',
-      timeout: 60000
+      timeout: 90000
     });
 
     return Buffer.from(res.data);
   }
 
   /**
-   * Generate Image using OpenRouter Image API
+   * Generate Image using OpenRouter Image API with multi-model resilience (paid + free tier fallback)
    */
   static async generateImage(options: {
     prompt: string;
     model?: string;
     aspectRatio?: string;
-  }): Promise<{ b64_json?: string; url?: string }> {
+  }): Promise<{ b64_json?: string; url?: string; mediaType?: string; modelUsed: string }> {
     const apiKey = config.openrouter.apiKey;
     if (!this.isConfigured()) {
       throw new OpenRouterConfigurationError('OpenRouter API key is not configured.');
     }
 
-    const model = options.model || 'black-forest-labs/flux-3-image-klein';
     const aspectRatio = options.aspectRatio || '1:1';
-
-    const res = await axios.post(
-      'https://openrouter.ai/api/v1/images',
-      {
-        model,
-        prompt: options.prompt,
-        aspect_ratio: aspectRatio,
-        n: 1
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 45000
-      }
+    const candidateModels = Array.from(
+      new Set([
+        options.model || 'black-forest-labs/flux-3-image-klein',
+        'black-forest-labs/flux-3-image-klein',
+        'bytedance-seed/seedream-5-0-flash',
+        'recraft/recraft-v4.1-flash-v2:free'
+      ])
     );
 
-    const first = res.data?.data?.[0];
-    if (!first) {
-      throw new Error('OpenRouter Image API returned empty result');
+    let lastError: any = null;
+
+    for (const model of candidateModels) {
+      try {
+        const res = await axios.post(
+          'https://openrouter.ai/api/v1/images',
+          {
+            model,
+            prompt: options.prompt,
+            aspect_ratio: aspectRatio,
+            n: 1
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 45000
+          }
+        );
+
+        const first = res.data?.data?.[0];
+        if (!first || (!first.b64_json && !first.url)) {
+          throw new Error(`OpenRouter Image API (${model}) returned empty result`);
+        }
+
+        let cleanB64: string | undefined = first.b64_json;
+        if (cleanB64 && cleanB64.includes(',')) {
+          cleanB64 = cleanB64.split(',').pop();
+        }
+
+        return {
+          b64_json: cleanB64,
+          url: first.url,
+          mediaType: first.media_type,
+          modelUsed: model
+        };
+      } catch (err: any) {
+        lastError = err;
+        const status = err.response?.status;
+        const detail = err.response?.data?.error?.message || err.message;
+        console.warn(`[OpenRouter] Image model ${model} failed (${status || 'ERR'}): ${detail}`);
+      }
     }
 
-    return {
-      b64_json: first.b64_json,
-      url: first.url
-    };
+    throw lastError || new Error('All OpenRouter image generation models failed');
   }
 }
 

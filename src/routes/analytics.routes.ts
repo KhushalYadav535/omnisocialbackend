@@ -108,6 +108,7 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
       publishedPostsCount,
       queuedPostsCount,
       failedPostsCount,
+      missedPostsCount,
       totalInteractions,
       unreadInteractions,
       needsResponseInteractions,
@@ -127,11 +128,15 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
           publishedAt: { gte: parsedStart, lte: parsedEnd }
         }
       }),
-      // 2. Queued posts
+      // 2. Active upcoming queued posts (exclude past-due drops counted as missed)
       prisma.publication.count({
         where: {
           ...pubWhere,
-          status: 'QUEUED'
+          status: 'QUEUED',
+          OR: [
+            { scheduledFor: null },
+            { scheduledFor: { gte: now } }
+          ]
         }
       }),
       // 3. Failed posts in window (deduplicated by distinct contentId to match calendar)
@@ -143,6 +148,19 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
         },
         select: { contentId: true }
       }).then(pubs => new Set(pubs.map(p => p.contentId)).size),
+      // 3B. Missed or overdue queued drops matching Calendar status semantics
+      prisma.publication.count({
+        where: {
+          ...pubWhere,
+          OR: [
+            { status: 'MISSED' },
+            {
+              status: 'QUEUED',
+              scheduledFor: { lt: now }
+            }
+          ]
+        }
+      }),
       // 4. Total interactions
       prisma.interaction.count({ where: interactionWhere }),
       // 5. Unread interactions
@@ -315,6 +333,11 @@ router.get('/dashboard', requirePermission('VIEW_ANALYTICS'), async (req: AuthRe
         totalPublishedPosts: publishedPostsCount,
         totalQueuedPosts: queuedPostsCount,
         totalFailedPosts: failedPostsCount,
+        totalMissedPosts: missedPostsCount,
+        totalUnfulfilledDrops: failedPostsCount + missedPostsCount,
+        publishingSla: (publishedPostsCount + failedPostsCount + missedPostsCount) > 0
+          ? Math.round((publishedPostsCount / (publishedPostsCount + failedPostsCount + missedPostsCount)) * 100)
+          : 100,
         totalInteractions,
         unreadCount: unreadInteractions,
         needsResponseCount: needsResponseInteractions,

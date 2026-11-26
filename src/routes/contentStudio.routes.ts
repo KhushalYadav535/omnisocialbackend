@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../services/db.service';
 import { SkillRegistry } from '../services/skills/skillRegistry';
 import { SkillOrchestrator } from '../services/skills/skillOrchestrator';
+import { PublicationDispatcherService } from '../services/publicationDispatcher.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -1566,56 +1567,130 @@ const handleApprovalReview = async (req: AuthRequest, res: Response): Promise<vo
         where: { contentId: id }
       });
     } else if (decision === 'APPROVED') {
-      const pubs = await prisma.publication.findMany({ where: { contentId: id } });
+      const pubs = await prisma.publication.findMany({
+        where: { contentId: id },
+        include: { socialAccount: true }
+      });
       const now = new Date();
+      const postRec = await prisma.content.findUnique({ where: { id } });
+
       if (pubs.length === 0) {
-        // Immediate Dispatch post approved without prior queue drops: publish immediately to connected brand channels
-        const postRec = await prisma.content.findUnique({ where: { id } });
+        // Immediate Dispatch post approved without prior queue drops: publish immediately via real platform APIs
         if (postRec) {
-          const brandAccounts = await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId, isConnected: true } });
-          const targetAccounts = brandAccounts.length > 0 ? brandAccounts : await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId } });
+          const brandAccounts = await prisma.socialAccount.findMany({ where: { brandId: postRec.brandId } });
+          const targetAccounts = PublicationDispatcherService.selectTargetAccounts(brandAccounts, postRec.targetPlatforms);
+          let publishedCount = 0;
+          const dispatchErrors: string[] = [];
+
           for (const acc of targetAccounts) {
-            await prisma.publication.create({
-              data: {
-                contentId: id,
-                socialAccountId: acc.id,
-                scheduledFor: now,
-                publishedAt: now,
-                status: 'PUBLISHED',
-                idempotencyKey: `idem_appr_${id}_${acc.id}_${Date.now()}`
-              }
-            });
+            try {
+              const dispatchRes = await PublicationDispatcherService.dispatchToAccount({
+                content: postRec,
+                account: acc
+              });
+              await prisma.publication.create({
+                data: {
+                  contentId: id,
+                  socialAccountId: acc.id,
+                  scheduledFor: now,
+                  publishedAt: now,
+                  status: 'PUBLISHED',
+                  platformPostId: dispatchRes.postId,
+                  platformPostUrl: dispatchRes.postUrl,
+                  idempotencyKey: `idem_appr_${id}_${acc.id}_${Date.now()}`
+                }
+              });
+              publishedCount++;
+            } catch (dispatchErr: any) {
+              dispatchErrors.push(`${acc.platform}: ${dispatchErr.message}`);
+              await prisma.publication.create({
+                data: {
+                  contentId: id,
+                  socialAccountId: acc.id,
+                  scheduledFor: now,
+                  status: 'FAILED',
+                  errorMessage: dispatchErr.message,
+                  idempotencyKey: `idem_appr_${id}_${acc.id}_${Date.now()}`
+                }
+              });
+            }
           }
-          await prisma.content.update({
-            where: { id },
-            data: { status: 'PUBLISHED' }
-          });
+
+          if (publishedCount > 0) {
+            await prisma.content.update({
+              where: { id },
+              data: { status: 'PUBLISHED' }
+            });
+          } else if (dispatchErrors.length > 0) {
+            res.status(502).json({
+              error: `Post approved, but live publishing failed: ${dispatchErrors.join(' | ')}`,
+              errors: dispatchErrors
+            });
+            return;
+          }
         }
       } else {
-        const isImmediate = pubs.every(p => !p.scheduledFor || p.scheduledFor <= now);
+        const duePubs = pubs.filter(p => p.status !== 'PUBLISHED' && (!p.scheduledFor || p.scheduledFor <= now));
+        let duePublishedCount = 0;
+        const dispatchErrors: string[] = [];
+
         for (const pub of pubs) {
           // Never roll forward or revert already-published publications
           if (pub.status === 'PUBLISHED') continue;
 
           if (!pub.scheduledFor || pub.scheduledFor <= now) {
-            // Immediate Dispatch or past-due slot: publish immediately on approval
-            await prisma.publication.update({
-              where: { id: pub.id },
-              data: { scheduledFor: now, publishedAt: now, status: 'PUBLISHED' }
-            });
+            // Immediate Dispatch or past-due slot: dispatch via real platform API and persist platformPostId & platformPostUrl
+            if (postRec && pub.socialAccount) {
+              try {
+                const dispatchRes = await PublicationDispatcherService.dispatchToAccount({
+                  content: postRec,
+                  account: pub.socialAccount
+                });
+                await prisma.publication.update({
+                  where: { id: pub.id },
+                  data: {
+                    scheduledFor: now,
+                    publishedAt: now,
+                    status: 'PUBLISHED',
+                    platformPostId: dispatchRes.postId,
+                    platformPostUrl: dispatchRes.postUrl,
+                    errorMessage: null
+                  }
+                });
+                duePublishedCount++;
+              } catch (dispatchErr: any) {
+                dispatchErrors.push(`${pub.socialAccount.platform}: ${dispatchErr.message}`);
+                await prisma.publication.update({
+                  where: { id: pub.id },
+                  data: {
+                    scheduledFor: now,
+                    status: 'FAILED',
+                    errorMessage: dispatchErr.message
+                  }
+                });
+              }
+            }
           } else {
-            // Keep the future scheduled slot intact
+            // Keep the future scheduled slot intact in QUEUED state for SchedulerService
             await prisma.publication.update({
               where: { id: pub.id },
               data: { status: 'QUEUED' }
             });
           }
         }
-        if (isImmediate) {
+
+        const isAllImmediate = duePubs.length === pubs.length;
+        if (isAllImmediate && duePublishedCount > 0) {
           await prisma.content.update({
             where: { id },
             data: { status: 'PUBLISHED' }
           });
+        } else if (isAllImmediate && duePublishedCount === 0 && dispatchErrors.length > 0) {
+          res.status(502).json({
+            error: `Post approved, but live publishing failed: ${dispatchErrors.join(' | ')}`,
+            errors: dispatchErrors
+          });
+          return;
         }
       }
     }

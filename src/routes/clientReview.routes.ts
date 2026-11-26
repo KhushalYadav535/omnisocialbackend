@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../services/db.service';
+import { PublicationDispatcherService } from '../services/publicationDispatcher.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -282,60 +283,97 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
 
       if (pubs.length === 0) {
         const brandAccounts = await prisma.socialAccount.findMany({
-          where: { brandId: content.brandId, isConnected: true }
+          where: { brandId: content.brandId }
         });
-        const targetAccounts = brandAccounts.length > 0 ? brandAccounts : await prisma.socialAccount.findMany({ where: { brandId: content.brandId } });
-        for (const acc of targetAccounts) {
-          const plat = (acc.platform || 'INSTAGRAM').toUpperCase();
-          const mockPostId = `${Date.now()}_${Math.floor(Math.random() * 899999 + 100000)}`;
-          const mockPostUrl = plat === 'LINKEDIN'
-            ? `https://www.linkedin.com/feed/update/urn:li:share:${mockPostId}`
-            : plat === 'INSTAGRAM'
-              ? `https://www.instagram.com/p/DA_${mockPostId.slice(-9)}/`
-              : `https://www.facebook.com/apexdigital/posts/${mockPostId}`;
+        const targetAccounts = PublicationDispatcherService.selectTargetAccounts(brandAccounts, content.targetPlatforms);
+        let publishedCount = 0;
 
-          await prisma.publication.create({
-            data: {
-              contentId,
-              socialAccountId: acc.id,
-              scheduledFor: isFutureScheduled ? scheduledDate! : now,
-              publishedAt: isFutureScheduled ? null : now,
-              status: isFutureScheduled ? 'QUEUED' : 'PUBLISHED',
-              platformPostId: isFutureScheduled ? null : mockPostId,
-              platformPostUrl: isFutureScheduled ? null : mockPostUrl,
-              idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
+        for (const acc of targetAccounts) {
+          if (isFutureScheduled) {
+            await prisma.publication.create({
+              data: {
+                contentId,
+                socialAccountId: acc.id,
+                scheduledFor: scheduledDate!,
+                status: 'QUEUED',
+                idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
+              }
+            });
+          } else {
+            try {
+              const dispatchRes = await PublicationDispatcherService.dispatchToAccount({
+                content,
+                account: acc
+              });
+              await prisma.publication.create({
+                data: {
+                  contentId,
+                  socialAccountId: acc.id,
+                  scheduledFor: now,
+                  publishedAt: now,
+                  status: 'PUBLISHED',
+                  platformPostId: dispatchRes.postId,
+                  platformPostUrl: dispatchRes.postUrl,
+                  idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
+                }
+              });
+              publishedCount++;
+            } catch (dispatchErr: any) {
+              await prisma.publication.create({
+                data: {
+                  contentId,
+                  socialAccountId: acc.id,
+                  scheduledFor: now,
+                  status: 'FAILED',
+                  errorMessage: dispatchErr.message,
+                  idempotencyKey: `idem_appr_${contentId}_${acc.id}_${Date.now()}`
+                }
+              });
             }
-          });
+          }
         }
         await prisma.content.update({
           where: { id: contentId },
-          data: { status: isFutureScheduled ? 'SCHEDULED' : 'PUBLISHED' }
+          data: { status: (!isFutureScheduled && publishedCount > 0) ? 'PUBLISHED' : 'SCHEDULED' }
         });
       } else {
-        const isImmediate = pubs.every(p => !p.scheduledFor || p.scheduledFor <= now);
+        const duePubs = pubs.filter(p => p.status !== 'PUBLISHED' && (!p.scheduledFor || p.scheduledFor <= now));
+        let duePublishedCount = 0;
+
         for (const pub of pubs) {
           if (pub.status === 'PUBLISHED') continue;
 
           if (!pub.scheduledFor || pub.scheduledFor <= now) {
             const pubAccount = await prisma.socialAccount.findUnique({ where: { id: pub.socialAccountId } });
-            const plat = (pubAccount?.platform || 'INSTAGRAM').toUpperCase();
-            const mockPostId = pub.platformPostId || `${Date.now()}_${Math.floor(Math.random() * 899999 + 100000)}`;
-            const mockPostUrl = pub.platformPostUrl || (plat === 'LINKEDIN'
-              ? `https://www.linkedin.com/feed/update/urn:li:share:${mockPostId}`
-              : plat === 'INSTAGRAM'
-                ? `https://www.instagram.com/p/DA_${mockPostId.slice(-9)}/`
-                : `https://www.facebook.com/apexdigital/posts/${mockPostId}`);
-
-            await prisma.publication.update({
-              where: { id: pub.id },
-              data: {
-                scheduledFor: now,
-                publishedAt: now,
-                status: 'PUBLISHED',
-                platformPostId: mockPostId,
-                platformPostUrl: mockPostUrl
+            if (pubAccount) {
+              try {
+                const dispatchRes = await PublicationDispatcherService.dispatchToAccount({
+                  content,
+                  account: pubAccount
+                });
+                await prisma.publication.update({
+                  where: { id: pub.id },
+                  data: {
+                    scheduledFor: now,
+                    publishedAt: now,
+                    status: 'PUBLISHED',
+                    platformPostId: dispatchRes.postId,
+                    platformPostUrl: dispatchRes.postUrl,
+                    errorMessage: null
+                  }
+                });
+                duePublishedCount++;
+              } catch (dispatchErr: any) {
+                await prisma.publication.update({
+                  where: { id: pub.id },
+                  data: {
+                    scheduledFor: now,
+                    status: 'FAILED',
+                    errorMessage: dispatchErr.message
+                  }
+                });
               }
-            });
+            }
           } else {
             await prisma.publication.update({
               where: { id: pub.id },
@@ -343,7 +381,7 @@ router.post('/public/:token/action', async (req: Request, res: Response): Promis
             });
           }
         }
-        if (isImmediate) {
+        if (duePubs.length === pubs.length && duePublishedCount > 0) {
           await prisma.content.update({
             where: { id: contentId },
             data: { status: 'PUBLISHED' }

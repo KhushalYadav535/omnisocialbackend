@@ -1,9 +1,7 @@
 import { Router, Response } from 'express';
-import axios from 'axios';
 import { prisma } from '../services/db.service';
-import { MetaService, MetaApiError } from '../services/meta.service';
-import { LinkedInService } from '../services/linkedin.service';
-import { CryptoService } from '../services/crypto.service';
+import { MetaApiError } from '../services/meta.service';
+import { extractPrimaryMediaUrl, PublicationDispatcherService } from '../services/publicationDispatcher.service';
 import { AuditService } from '../services/audit.service';
 import { authenticateToken, requireTenant, AuthRequest } from '../middleware/auth.middleware';
 
@@ -52,101 +50,21 @@ router.post('/publish-now', async (req: AuthRequest, res: Response): Promise<voi
       return;
     }
 
-    let mediaUrl: string | undefined;
-    try {
-      const parsed = JSON.parse(content.mediaUrls || '[]');
-      mediaUrl = parsed[0];
-      if (mediaUrl && mediaUrl.startsWith('http://') && !mediaUrl.includes('localhost')) {
-        mediaUrl = mediaUrl.replace('http://', 'https://');
-      }
-    } catch {
-      mediaUrl = undefined;
-    }
+    const mediaUrl = extractPrimaryMediaUrl(content.mediaUrls);
 
     const publications: any[] = [];
     const errors: string[] = [];
 
     for (const account of accounts) {
-      // Decrypt stored access token
-      let rawAccessToken: string;
-      try {
-        rawAccessToken = CryptoService.isEncrypted(account.accessToken)
-          ? CryptoService.decrypt(account.accessToken)
-          : account.accessToken;
-      } catch (decryptErr: any) {
-        errors.push(`Account ${account.platform} token decryption failed: ${decryptErr.message}`);
-        continue;
-      }
-
       const now = new Date();
       const idempotencyKey = `idem_instant_${content.id}_${account.id}_${Date.now()}`;
 
       try {
-        let result: { success: true; postId: string; postUrl: string };
-        if (account.platform === 'FACEBOOK') {
-          result = await MetaService.publishToFacebookPage(
-            account.platformAccountId,
-            rawAccessToken,
-            content.caption,
-            mediaUrl
-          );
-        } else if (account.platform === 'INSTAGRAM') {
-          result = await MetaService.publishToInstagram(
-            account.platformAccountId,
-            rawAccessToken,
-            content.caption,
-            mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
-          );
-        } else if (account.platform === 'LINKEDIN') {
-          let authorUrn = `urn:li:person:${account.platformAccountId}`;
-          try {
-            const meta = account.metadata ? JSON.parse(account.metadata) : {};
-            if (meta.personUrn) authorUrn = meta.personUrn;
-          } catch {
-            // Keep default
-          }
-          result = await LinkedInService.publishPost(
-            authorUrn,
-            rawAccessToken,
-            content.caption,
-            mediaUrl
-          );
-        } else {
-          throw new Error(`Unsupported publishing platform: ${account.platform}`);
-        }
-
-        // Feature 1B: AI First-Comment Autopilot
-        if (content.firstComment && content.firstComment.trim() && result.postId) {
-          try {
-            if (account.platform === 'LINKEDIN') {
-              const authorUrn = account.pageCategory === 'COMPANY_PAGE'
-                ? `urn:li:organization:${account.platformAccountId}`
-                : `urn:li:person:${account.platformAccountId}`;
-              await axios.post(
-                `https://api.linkedin.com/v2/socialActions/${encodeURIComponent(result.postId)}/comments`,
-                {
-                  actor: authorUrn,
-                  message: { text: content.firstComment.trim() }
-                },
-                {
-                  headers: {
-                    'Authorization': `Bearer ${rawAccessToken}`,
-                    'Content-Type': 'application/json',
-                    'X-Restli-Protocol-Version': '2.0.0'
-                  }
-                }
-              );
-            } else if (account.platform === 'FACEBOOK' || account.platform === 'INSTAGRAM') {
-              await axios.post(
-                `https://graph.facebook.com/v26.0/${result.postId}/comments`,
-                { message: content.firstComment.trim() },
-                { params: { access_token: rawAccessToken } }
-              );
-            }
-          } catch (commentErr: any) {
-            console.warn('[First-Comment Autopilot Notice]:', commentErr.response?.data?.error?.message || commentErr.message);
-          }
-        }
+        const result = await PublicationDispatcherService.dispatchToAccount({
+          content,
+          account,
+          mediaUrlOverride: mediaUrl
+        });
 
         const pub = await prisma.publication.create({
           data: {

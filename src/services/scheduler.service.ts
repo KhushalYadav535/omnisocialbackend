@@ -1,6 +1,6 @@
 import { prisma } from './db.service';
 import { MetaService, MetaApiError } from './meta.service';
-import { LinkedInService } from './linkedin.service';
+import { PublicationDispatcherService } from './publicationDispatcher.service';
 import { CryptoService } from './crypto.service';
 import { AuditService } from './audit.service';
 
@@ -168,70 +168,11 @@ export class SchedulerService {
           continue;
         }
 
-        let mediaUrl: string | undefined;
         try {
-          const parsed = JSON.parse(content.mediaUrls || '[]');
-          mediaUrl = parsed[0];
-        } catch {
-          mediaUrl = undefined;
-        }
-
-        // Decrypt stored access token using AES-256-GCM
-        let rawAccessToken: string;
-        try {
-          rawAccessToken = CryptoService.isEncrypted(account.accessToken)
-            ? CryptoService.decrypt(account.accessToken)
-            : account.accessToken;
-        } catch (decryptErr: any) {
-          await prisma.publication.update({
-            where: { id: pub.id },
-            data: {
-              status: 'FAILED',
-              errorMessage: `Token decryption failure: ${decryptErr.message}`
-            }
+          const res = await PublicationDispatcherService.dispatchToAccount({
+            content,
+            account
           });
-          failCount++;
-          continue;
-        }
-
-        try {
-          let res: { success: true; postId: string; postUrl: string };
-
-          if (account.platform === 'FACEBOOK') {
-            res = await MetaService.publishToFacebookPage(
-              account.platformAccountId,
-              rawAccessToken,
-              content.caption,
-              mediaUrl
-            );
-          } else if (account.platform === 'INSTAGRAM') {
-            res = await MetaService.publishToInstagram(
-              account.platformAccountId,
-              rawAccessToken,
-              content.caption,
-              mediaUrl || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=1080&h=1080&fit=crop'
-            );
-          } else if (account.platform === 'LINKEDIN') {
-            let authorUrn = `urn:li:person:${account.platformAccountId}`;
-            try {
-              const meta = account.metadata ? JSON.parse(account.metadata) : {};
-              if (meta.personUrn) authorUrn = meta.personUrn;
-            } catch {
-              // keep default
-            }
-            res = await LinkedInService.publishPost(
-              authorUrn,
-              rawAccessToken,
-              content.caption,
-              mediaUrl
-            );
-          } else {
-            throw new Error(`Unsupported publishing platform: ${account.platform}`);
-          }
-
-          if (!res || !res.postId) {
-            throw new Error('Meta API returned empty or invalid platform post ID');
-          }
 
           // Set publishedAt ONLY after Meta API returns a confirmed external platform post ID
           const confirmedPublishedAt = new Date();

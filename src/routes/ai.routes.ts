@@ -347,7 +347,8 @@ router.post('/generate-image', async (req: AuthRequest, res: Response): Promise<
     let imageUrl: string;
 
     if (result.b64_json) {
-      const filename = `image_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+      const ext = result.mediaType?.includes('png') ? 'png' : result.mediaType?.includes('webp') ? 'webp' : 'jpg';
+      const filename = `image_ai_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
       const filePath = path.join(uploadsDir, filename);
       const buffer = Buffer.from(result.b64_json, 'base64');
       fs.writeFileSync(filePath, buffer);
@@ -360,7 +361,9 @@ router.post('/generate-image', async (req: AuthRequest, res: Response): Promise<
 
     res.json({
       success: true,
-      imageUrl
+      imageUrl,
+      modelUsed: result.modelUsed,
+      source: 'OPENROUTER_AI'
     });
   } catch (err: any) {
     handleAiError(err, res, 'Failed to generate photorealistic image');
@@ -601,7 +604,7 @@ router.post('/campaign-roadmap/regenerate-post', async (req: AuthRequest, res: R
 // 14. "Start From Zero" Campaign Architect: 1-Click Deploy to Calendar
 router.post('/deploy-campaign', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { brandId, campaignName, posts } = req.body;
+    const { brandId, campaignName, posts, approvalMode, bypassGate } = req.body;
 
     if (!posts || !Array.isArray(posts) || posts.length === 0) {
       res.status(400).json({ error: 'posts array is required to deploy campaign' });
@@ -636,12 +639,16 @@ router.post('/deploy-campaign', async (req: AuthRequest, res: Response): Promise
       targetBrandId = newBrand.id;
     }
 
+    const resolvedApprovalMode: 'PENDING' | 'APPROVED' =
+      (approvalMode === 'APPROVED' || bypassGate === true) ? 'APPROVED' : 'PENDING';
+
     const result = await CampaignArchitectService.deployCampaignToCalendar({
       tenantId: req.user?.tenantId!,
       userId: req.user?.id!,
       brandId: targetBrandId,
       campaignName: campaignName || 'Start From Zero Campaign',
-      posts
+      posts,
+      approvalMode: resolvedApprovalMode
     });
 
     res.json({

@@ -100,17 +100,13 @@ router.get('/', requirePermission('VIEW_ANALYTICS'), async (req: AuthRequest, re
         claimedAt: pub.claimedAt,
         publishedAt: pub.publishedAt,
         status: effectiveStatus,
-        postUrl: pub.platformPostUrl || (effectiveStatus === 'PUBLISHED' ? (
-          pub.platformPostId ? (
-            pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/${pub.platformPostId}` :
-            pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.platformPostId}` :
-            `https://www.facebook.com/${pub.platformPostId.includes('_') ? pub.platformPostId : `1485024198017475_${pub.platformPostId}`}`
-          ) : (
-            pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/urn:li:share:${pub.id}` :
-            pub.socialAccount?.platform === 'INSTAGRAM' ? `https://www.instagram.com/p/${pub.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 11) || '18117292559158242'}` :
-            `https://www.facebook.com/1485024198017475_${pub.id.replace(/[^a-zA-Z0-9]/g, '') || '122112569337533998'}`
-          )
-        ) : pub.platformPostUrl),
+        postUrl: pub.platformPostUrl || (effectiveStatus === 'PUBLISHED' && pub.platformPostId ? (
+          pub.socialAccount?.platform === 'LINKEDIN' ? `https://www.linkedin.com/feed/update/${pub.platformPostId}` :
+          pub.socialAccount?.platform === 'INSTAGRAM' ? (
+            pub.content?.format === 'REEL' ? `https://www.instagram.com/reel/${pub.platformPostId}/` : `https://www.instagram.com/p/${pub.platformPostId}/`
+          ) :
+          `https://www.facebook.com/${pub.platformPostId.includes('_') ? pub.platformPostId : `1485024198017475_${pub.platformPostId}`}`
+        ) : null),
         platformPostId: pub.platformPostId,
         errorMessage: pub.errorMessage,
         isEvergreen: pub.content?.isEvergreen || false,
