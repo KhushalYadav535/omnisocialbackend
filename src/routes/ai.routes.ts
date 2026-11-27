@@ -640,8 +640,25 @@ router.post('/deploy-campaign', async (req: AuthRequest, res: Response): Promise
       targetBrandId = newBrand.id;
     }
 
-    const resolvedApprovalMode: 'PENDING' | 'APPROVED' =
-      (approvalMode === 'APPROVED' || bypassGate === true) ? 'APPROVED' : 'PENDING';
+    const wantsBypass = approvalMode === 'APPROVED' || bypassGate === true;
+    const privilegedBypassRoles = new Set([
+      'SUPER_ADMIN',
+      'SUPERADMIN',
+      'OWNER',
+      'ADMIN',
+      'TENANT_ADMIN',
+      'AGENCY_ADMIN',
+      'APPROVER'
+    ]);
+    if (wantsBypass && !privilegedBypassRoles.has(String(req.user?.role || '').toUpperCase())) {
+      res.status(403).json({
+        error: 'GOVERNANCE_BYPASS_FORBIDDEN',
+        message: 'Only admin or approver roles can bypass the Client Approval Governance Gate.'
+      });
+      return;
+    }
+
+    const resolvedApprovalMode: 'PENDING' | 'APPROVED' = wantsBypass ? 'APPROVED' : 'PENDING';
 
     const result = await CampaignArchitectService.deployCampaignToCalendar({
       tenantId: req.user?.tenantId!,
